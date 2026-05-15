@@ -14,7 +14,8 @@ const animateButton = document.querySelector("#animateButton");
 const numberInput = document.querySelector("#numberInput");
 const powerSelect = document.querySelector("#powerSelect");
 const zeroFillInput = document.querySelector("#zeroFill");
-const speedSelect = document.querySelector("#speedSelect");
+const hideGridInput = document.querySelector("#hideGrid");
+const speedSlider = document.querySelector("#speedSlider");
 const inputError = document.querySelector("#inputError");
 const calculationText = document.querySelector("#calculationText");
 
@@ -31,11 +32,7 @@ const layout = {
   decimalGap: 34,
 };
 
-const SPEEDS = {
-  slow: { delay: 560, duration: 1100 },
-  normal: { delay: 360, duration: 760 },
-  fast: { delay: 190, duration: 430 },
-};
+const BASE_ANIMATION = { delay: 360, duration: 760 };
 
 const formatter = new Intl.NumberFormat("en-GB", {
   maximumFractionDigits: 12,
@@ -52,7 +49,8 @@ function getSettings() {
     power: Number(powerSelect.value),
     headerStyle: new FormData(controls).get("headerStyle"),
     zeroFill: zeroFillInput.checked,
-    speed: speedSelect.value,
+    hideGrid: hideGridInput.checked,
+    speed: Number(speedSlider.value),
   };
 }
 
@@ -62,6 +60,7 @@ function applyUrlSettings() {
   const power = params.get("power");
   const headers = params.get("headers");
   const zeros = params.get("zeros");
+  const grid = params.get("grid");
   const speed = params.get("speed");
   const number = params.get("number");
 
@@ -77,7 +76,14 @@ function applyUrlSettings() {
   }
   if (zeros === "1") zeroFillInput.checked = true;
   if (zeros === "0") zeroFillInput.checked = false;
-  if (SPEEDS[speed]) speedSelect.value = speed;
+  if (grid === "0") hideGridInput.checked = true;
+  if (grid === "1") hideGridInput.checked = false;
+  if (speed === "slow") speedSlider.value = "0.5";
+  if (speed === "normal") speedSlider.value = "1";
+  if (speed === "fast") speedSlider.value = "2";
+  if (speed !== null && !Number.isNaN(Number(speed))) {
+    speedSlider.value = String(Math.min(2, Math.max(0.25, Number(speed))));
+  }
 }
 
 function updateUrlSettings() {
@@ -88,7 +94,8 @@ function updateUrlSettings() {
   params.set("power", String(settings.power));
   params.set("headers", settings.headerStyle);
   params.set("zeros", settings.zeroFill ? "1" : "0");
-  params.set("speed", settings.speed);
+  params.set("grid", settings.hideGrid ? "0" : "1");
+  params.set("speed", String(settings.speed));
   window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
 }
 
@@ -284,6 +291,10 @@ function renderGrid(showCorrectRow = false) {
   bodies.exit().remove();
 }
 
+function applyGridVisibility(hideGrid) {
+  svg.classed("hide-grid", hideGrid);
+}
+
 function renderDecimalMarks() {
   const marks = [
     { y: tokenY(0) + 30, label: "." },
@@ -469,7 +480,11 @@ function animateDigits(sourceMap, operation, power, zeroFill, version) {
   movingLayer.selectAll("*").remove();
 
   const direction = operation === "multiply" ? 1 : -1;
-  const speed = SPEEDS[getSettings().speed] || SPEEDS.normal;
+  const speedFactor = Math.min(2, Math.max(0.25, getSettings().speed || 0.5));
+  const speed = {
+    delay: BASE_ANIMATION.delay / speedFactor,
+    duration: BASE_ANIMATION.duration / speedFactor,
+  };
   const data = digitDataFromMap(displayMap(sourceMap, zeroFill), 0, `moving-${version}`, zeroFill).map((digit, index) => ({
     ...digit,
     targetExponent: digit.exponent + direction * power,
@@ -571,6 +586,7 @@ function renderBase(resetAnswer = false) {
 
     renderHeaders(settings.headerStyle);
     renderGrid();
+    applyGridVisibility(settings.hideGrid);
     renderDecimalMarks();
     renderStaticDigits(
       svg.select(".static-start"),
@@ -606,6 +622,7 @@ function revealAnswer() {
     markAnswer(displayMap(resultMap, settings.zeroFill), userCorrect);
     svg.selectAll("*").interrupt();
     renderGrid(true);
+    applyGridVisibility(settings.hideGrid);
     renderDecimalMarks();
     svg.select(".static-result").selectAll("*").remove();
     svg.select(".moving").selectAll("*").remove();
@@ -614,13 +631,18 @@ function revealAnswer() {
     renderAnswerFeedback(userAnswer, userCorrect);
     animateDigits(sourceMap, settings.operation, settings.power, settings.zeroFill, version);
 
+    const speedFactor = Math.min(2, Math.max(0.25, settings.speed || 0.5));
+    const speed = {
+      delay: BASE_ANIMATION.delay / speedFactor,
+      duration: BASE_ANIMATION.duration / speedFactor,
+    };
     window.setTimeout(() => {
       if (version !== renderVersion || !revealed) return;
       renderStaticDigits(
         svg.select(".static-result"),
         digitDataFromMap(displayMap(resultMap, settings.zeroFill), 1, `result-${version}`, settings.zeroFill),
       );
-    }, digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, "timing").length * (SPEEDS[settings.speed] || SPEEDS.normal).delay + (SPEEDS[settings.speed] || SPEEDS.normal).duration + 20);
+    }, digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, "timing").length * speed.delay + speed.duration + 20);
     updateUrlSettings();
   } catch (error) {
     showError(error.message);

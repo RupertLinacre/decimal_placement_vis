@@ -90,7 +90,7 @@ h1 {
 
 .control-bar {
   display: grid;
-  grid-template-columns: minmax(160px, 1.2fr) auto minmax(130px, 0.65fr) auto auto;
+  grid-template-columns: minmax(150px, 1.2fr) auto minmax(120px, 0.6fr) auto auto auto auto;
   gap: 12px;
   align-items: end;
   padding: 14px;
@@ -126,6 +126,11 @@ h1 {
   background: var(--surface);
   color: var(--ink);
   padding: 0 11px;
+}
+
+.field input[type="range"] {
+  padding: 0;
+  accent-color: var(--accent);
 }
 
 .field input:focus,
@@ -292,6 +297,10 @@ h1 {
   box-shadow: var(--shadow);
 }
 
+.speed-field {
+  min-width: 240px;
+}
+
 .error {
   border: 1px solid #b93d3d;
   border-radius: 6px;
@@ -340,6 +349,19 @@ h1 {
 .column-header.decimal-column,
 .column-body.decimal-column {
   fill: #fbf6e7;
+}
+
+.hide-grid .column-header,
+.hide-grid .column-body,
+.hide-grid .header-text,
+.hide-grid .fraction-host,
+.hide-grid .row-label {
+  opacity: 0;
+}
+
+.hide-grid .answer-cell {
+  border-color: transparent;
+  background: transparent;
 }
 
 .header-text {
