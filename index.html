@@ -11,14 +11,7 @@
     <main class="app-shell">
       <section class="workspace" aria-labelledby="app-title">
         <div class="intro">
-          <div>
-            <p class="eyebrow">Place value movement</p>
-            <h1 id="app-title">Multiply and divide by powers of ten</h1>
-          </div>
-          <div class="result-panel" aria-live="polite">
-            <span class="result-label">Check</span>
-            <strong id="calculationText">Write your answer, then animate</strong>
-          </div>
+          <h1 id="app-title">Multiply and divide by powers of ten</h1>
         </div>
 
         <form class="control-bar" id="controls">
@@ -48,25 +41,44 @@
             </select>
           </label>
 
-          <fieldset class="segmented wide" aria-label="Column header style">
-            <legend>Headers</legend>
-            <label>
-              <input type="radio" name="headerStyle" value="fractions" checked />
-              <span>Fractions</span>
-            </label>
-            <label>
-              <input type="radio" name="headerStyle" value="words" />
-              <span>Words</span>
-            </label>
-          </fieldset>
+          <details class="settings-menu" id="settingsMenu">
+            <summary>Settings</summary>
+            <div class="settings-panel">
+              <fieldset class="segmented wide" aria-label="Column header style">
+                <legend>Headers</legend>
+                <label>
+                  <input type="radio" name="headerStyle" value="fractions" checked />
+                  <span>Fractions</span>
+                </label>
+                <label>
+                  <input type="radio" name="headerStyle" value="words" />
+                  <span>Words</span>
+                </label>
+              </fieldset>
 
-          <label class="toggle">
-            <input id="zeroFill" type="checkbox" />
-            <span>Show empty columns as 0</span>
-          </label>
+              <label class="toggle">
+                <input id="zeroFill" type="checkbox" />
+                <span>Show empty columns as 0</span>
+              </label>
 
-          <button class="primary-action" id="animateButton" type="button">Animate</button>
+              <label class="field">
+                <span>Animation speed</span>
+                <select id="speedSelect">
+                  <option value="slow">Slow</option>
+                  <option value="normal" selected>Normal</option>
+                  <option value="fast">Fast</option>
+                </select>
+              </label>
+            </div>
+          </details>
+
+          <button class="primary-action" id="animateButton" type="button">Check my answer</button>
         </form>
+
+        <div class="result-panel" aria-live="polite">
+          <span class="result-label">Check</span>
+          <strong id="calculationText">Write your answer, then check</strong>
+        </div>
 
         <div class="error" id="inputError" role="alert" hidden></div>
 

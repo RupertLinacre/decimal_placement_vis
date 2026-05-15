@@ -14,6 +14,7 @@ const animateButton = document.querySelector("#animateButton");
 const numberInput = document.querySelector("#numberInput");
 const powerSelect = document.querySelector("#powerSelect");
 const zeroFillInput = document.querySelector("#zeroFill");
+const speedSelect = document.querySelector("#speedSelect");
 const inputError = document.querySelector("#inputError");
 const calculationText = document.querySelector("#calculationText");
 const beforeNumber = document.querySelector("#beforeNumber");
@@ -22,15 +23,21 @@ const movementText = document.querySelector("#movementText");
 
 const layout = {
   width: 1160,
-  height: 700,
+  height: 790,
   marginLeft: 142,
   marginTop: 28,
   columnWidth: 132,
   headerHeight: 118,
   rowHeight: 128,
-  rowGap: 18,
+  rowGap: 62,
   digitInset: 12,
   decimalGap: 34,
+};
+
+const SPEEDS = {
+  slow: { delay: 560, duration: 1100 },
+  normal: { delay: 360, duration: 760 },
+  fast: { delay: 190, duration: 430 },
 };
 
 const formatter = new Intl.NumberFormat("en-GB", {
@@ -48,7 +55,44 @@ function getSettings() {
     power: Number(powerSelect.value),
     headerStyle: new FormData(controls).get("headerStyle"),
     zeroFill: zeroFillInput.checked,
+    speed: speedSelect.value,
   };
+}
+
+function applyUrlSettings() {
+  const params = new URLSearchParams(window.location.search);
+  const operation = params.get("operation");
+  const power = params.get("power");
+  const headers = params.get("headers");
+  const zeros = params.get("zeros");
+  const speed = params.get("speed");
+  const number = params.get("number");
+
+  if (number !== null) numberInput.value = number;
+  if (operation === "multiply" || operation === "divide") {
+    const input = controls.querySelector(`input[name="operation"][value="${operation}"]`);
+    if (input) input.checked = true;
+  }
+  if (["1", "2", "3"].includes(power)) powerSelect.value = power;
+  if (headers === "fractions" || headers === "words") {
+    const input = controls.querySelector(`input[name="headerStyle"][value="${headers}"]`);
+    if (input) input.checked = true;
+  }
+  if (zeros === "1") zeroFillInput.checked = true;
+  if (zeros === "0") zeroFillInput.checked = false;
+  if (SPEEDS[speed]) speedSelect.value = speed;
+}
+
+function updateUrlSettings() {
+  const settings = getSettings();
+  const params = new URLSearchParams();
+  params.set("number", settings.rawNumber || "0");
+  params.set("operation", settings.operation);
+  params.set("power", String(settings.power));
+  params.set("headers", settings.headerStyle);
+  params.set("zeros", settings.zeroFill ? "1" : "0");
+  params.set("speed", settings.speed);
+  window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
 }
 
 function parseNumber(value) {
@@ -245,7 +289,6 @@ function renderGrid(showCorrectRow = false) {
 
 function renderDecimalMarks() {
   const marks = [
-    { y: layout.marginTop + layout.headerHeight - 28, label: "." },
     { y: tokenY(0) + 30, label: "." },
     { y: tokenY(1) + 30, label: ".", isCorrect: true },
     { y: tokenY(2) + 30, label: "." },
@@ -317,7 +360,7 @@ function bindAnswerInputs() {
       svg.select(".movement-path").selectAll("*").remove();
       renderGrid(false);
       renderDecimalMarks();
-      calculationText.textContent = "Write your answer, then animate";
+      calculationText.textContent = "Write your answer, then check";
       clearInputStates();
     });
   });
@@ -358,18 +401,57 @@ function markAnswer(resultMap, userCorrect) {
   });
 }
 
-function renderMovementLabel(operation, power) {
-  const direction = operation === "multiply" ? "left" : "right";
-  const y = rowY(1) - layout.rowGap / 2 + 5;
-  svg
-    .select(".movement-path")
-    .selectAll("text")
-    .data([`${power} place${power === 1 ? "" : "s"} ${direction}`])
-    .join("text")
-    .attr("class", "arrow-label")
-    .attr("x", layout.marginLeft + (COLUMNS.length * layout.columnWidth + layout.decimalGap) / 2)
-    .attr("y", y)
-    .text((d) => d);
+function renderMovementArrows(sourceMap, operation, power, zeroFill) {
+  const direction = operation === "multiply" ? 1 : -1;
+  const arrowData = digitDataFromMap(displayMap(sourceMap, zeroFill), 0, "arrow", zeroFill)
+    .map((digit, index) => ({
+      ...digit,
+      targetExponent: digit.exponent + direction * power,
+      lane: index,
+    }))
+    .filter((d) => d.targetExponent >= -3 && d.targetExponent <= 3);
+  const gapTop = rowY(0) + layout.rowHeight;
+  const laneStep = Math.min(8, Math.max(4, (layout.rowGap - 24) / Math.max(1, arrowData.length - 1)));
+  const line = d3.line().curve(d3.curveBumpX);
+
+  const layer = svg.select(".movement-path");
+  const defs = svg.select("defs").empty() ? svg.append("defs") : svg.select("defs");
+  defs
+    .selectAll("marker#arrowHead")
+    .data([0])
+    .join("marker")
+    .attr("id", "arrowHead")
+    .attr("viewBox", "0 0 10 10")
+    .attr("refX", 8)
+    .attr("refY", 5)
+    .attr("markerWidth", 6)
+    .attr("markerHeight", 6)
+    .attr("orient", "auto-start-reverse");
+  defs
+    .select("marker#arrowHead")
+    .selectAll("path")
+    .data([0])
+    .join("path")
+    .attr("d", "M 0 0 L 10 5 L 0 10 z")
+    .attr("fill", "#6c7d8c");
+
+  layer
+    .selectAll("path.arrow-path")
+    .data(arrowData, (d) => d.id)
+    .join("path")
+    .attr("class", (d) => `arrow-path${d.isPale ? " pale-arrow" : ""}`)
+    .attr("marker-end", "url(#arrowHead)")
+    .attr("d", (d) => {
+      const y = gapTop + 14 + d.lane * laneStep;
+      const x1 = xForExponent(d.exponent);
+      const x2 = xForExponent(d.targetExponent);
+      const midY = y + (d.lane % 2 === 0 ? 10 : -8);
+      return line([
+        [x1, y],
+        [(x1 + x2) / 2, midY],
+        [x2, y],
+      ]);
+    });
 }
 
 function animateDigits(sourceMap, operation, power, zeroFill, version) {
@@ -377,10 +459,11 @@ function animateDigits(sourceMap, operation, power, zeroFill, version) {
   movingLayer.selectAll("*").remove();
 
   const direction = operation === "multiply" ? 1 : -1;
+  const speed = SPEEDS[getSettings().speed] || SPEEDS.normal;
   const data = digitDataFromMap(displayMap(sourceMap, zeroFill), 0, `moving-${version}`, zeroFill).map((digit, index) => ({
     ...digit,
     targetExponent: digit.exponent + direction * power,
-    delay: index * 360,
+    delay: index * speed.delay,
   }));
 
   const visibleData = data.filter((d) => d.targetExponent >= -3 && d.targetExponent <= 3);
@@ -395,7 +478,7 @@ function animateDigits(sourceMap, operation, power, zeroFill, version) {
     .text((d) => d.digit)
     .transition()
     .delay((d) => d.delay)
-    .duration(760)
+    .duration(speed.duration)
     .ease(d3.easeCubicInOut)
     .attr("x", (d) => xForExponent(d.targetExponent))
     .attr("y", tokenY(1));
@@ -415,7 +498,7 @@ function updateSummary(parsed, result, settings, hasRevealed = false, userCorrec
   afterNumber.textContent = hasRevealed ? after : "?";
   movementText.textContent = hasRevealed
     ? `Each digit moves ${places} to the ${direction}. The decimal point stays fixed; the digits change columns.`
-    : "Enter your answer in the place-value row, then press Animate.";
+    : "Enter your answer in the place-value row, then press Check my answer.";
 }
 
 function clearError() {
@@ -490,6 +573,7 @@ function renderBase(resetAnswer = false) {
     svg.select(".movement-path").selectAll("*").remove();
     if (resetAnswer) clearAnswerInputs();
     updateSummary(parsed, result, settings, false, false);
+    updateUrlSettings();
   } catch (error) {
     showError(error.message);
     svg.selectAll("*").remove();
@@ -513,7 +597,7 @@ function revealAnswer() {
     renderDecimalMarks();
     svg.select(".static-result").selectAll("*").remove();
     svg.select(".moving").selectAll("*").remove();
-    renderMovementLabel(settings.operation, settings.power);
+    renderMovementArrows(sourceMap, settings.operation, settings.power, settings.zeroFill);
     updateSummary(parsed, result, settings, true, userCorrect);
     animateDigits(sourceMap, settings.operation, settings.power, settings.zeroFill, version);
 
@@ -523,7 +607,8 @@ function revealAnswer() {
         svg.select(".static-result"),
         digitDataFromMap(displayMap(resultMap, settings.zeroFill), 1, `result-${version}`, settings.zeroFill),
       );
-    }, digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, "timing").length * 360 + 770);
+    }, digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, "timing").length * (SPEEDS[settings.speed] || SPEEDS.normal).delay + (SPEEDS[settings.speed] || SPEEDS.normal).duration + 20);
+    updateUrlSettings();
   } catch (error) {
     showError(error.message);
     svg.selectAll("*").remove();
@@ -540,4 +625,7 @@ controls.addEventListener("change", (event) => {
 });
 animateButton.addEventListener("click", revealAnswer);
 
-window.addEventListener("load", () => renderBase(false));
+window.addEventListener("load", () => {
+  applyUrlSettings();
+  renderBase(false);
+});
