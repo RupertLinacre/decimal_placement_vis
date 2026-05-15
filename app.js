@@ -201,15 +201,14 @@ function renderFraction(column) {
 function cellClass(base, exponent) {
   const classes = [base];
   if (exponent < 0) classes.push("decimal-column");
-  if (exponent === 0) classes.push("ones-column");
   return classes.join(" ");
 }
 
-function renderGrid() {
+function renderGrid(showCorrectRow = false) {
   const rows = [
     { index: 0, label: "start" },
-    { index: 1, label: "your answer" },
-    { index: 2, label: "correct" },
+    { index: 1, label: "correct", isCorrect: true },
+    { index: 2, label: "your answer" },
   ];
   const bodies = svg.select(".bodies").selectAll("g.body-row").data(rows, (d) => d.index);
   const enteredRows = bodies.enter().append("g").attr("class", "body-row");
@@ -222,9 +221,10 @@ function renderGrid() {
     .select(".row-label")
     .attr("x", layout.marginLeft - 18)
     .attr("y", layout.rowHeight / 2)
+    .attr("class", (d) => `row-label${d.isCorrect && !showCorrectRow ? " hidden-row" : ""}`)
     .text((d) => d.label);
 
-  mergedRows.each(function () {
+  mergedRows.each(function (row) {
     const cells = d3.select(this).select(".cells").selectAll("rect").data(COLUMNS, (d) => d.key);
     cells
       .enter()
@@ -234,39 +234,31 @@ function renderGrid() {
       .attr("y", 0)
       .attr("width", layout.columnWidth)
       .attr("height", layout.rowHeight)
-      .attr("class", (d) => cellClass("column-body", d.exponent));
+      .attr("class", (d) => {
+        const baseClass = cellClass("column-body", d.exponent);
+        return row.isCorrect && !showCorrectRow ? `${baseClass} hidden-row` : baseClass;
+      });
   });
 
   bodies.exit().remove();
 }
 
 function renderDecimalMarks() {
-  const y1 = layout.marginTop;
-  const y2 = rowY(2) + layout.rowHeight;
   const marks = [
-    { y: layout.marginTop + layout.headerHeight / 2, label: "." },
-    { y: tokenY(0), label: "." },
-    { y: tokenY(1), label: "." },
-    { y: tokenY(2), label: "." },
+    { y: layout.marginTop + layout.headerHeight - 28, label: "." },
+    { y: tokenY(0) + 30, label: "." },
+    { y: tokenY(1) + 30, label: ".", isCorrect: true },
+    { y: tokenY(2) + 30, label: "." },
   ];
 
-  svg
-    .select(".decimal-markers")
-    .selectAll("line")
-    .data([0])
-    .join("line")
-    .attr("class", "decimal-guide")
-    .attr("x1", decimalX())
-    .attr("x2", decimalX())
-    .attr("y1", y1)
-    .attr("y2", y2);
+  svg.select(".decimal-markers").selectAll("line").data([]).join("line");
 
   svg
     .select(".decimal-markers")
     .selectAll("text")
     .data(marks)
     .join("text")
-    .attr("class", "decimal-point")
+    .attr("class", (d) => `decimal-point${d.isCorrect && !revealed ? " hidden-row" : ""}`)
     .attr("x", decimalX())
     .attr("y", (d) => d.y)
     .text((d) => d.label);
@@ -307,7 +299,7 @@ function renderAnswerInputs() {
     .attr("class", "answer-cell-host")
     .merge(inputs)
     .attr("x", (_, index) => xForIndex(index) + layout.digitInset)
-    .attr("y", rowY(1) + layout.digitInset)
+    .attr("y", rowY(2) + layout.digitInset)
     .attr("width", layout.columnWidth - layout.digitInset * 2)
     .attr("height", layout.rowHeight - layout.digitInset * 2)
     .html((d) => `<input class="answer-cell" data-exponent="${d.exponent}" maxlength="1" inputmode="numeric" aria-label="${d.word} answer digit" />`);
@@ -322,6 +314,9 @@ function bindAnswerInputs() {
       revealed = false;
       svg.select(".moving").selectAll("*").remove();
       svg.select(".static-result").selectAll("*").remove();
+      svg.select(".movement-path").selectAll("*").remove();
+      renderGrid(false);
+      renderDecimalMarks();
       calculationText.textContent = "Write your answer, then animate";
       clearInputStates();
     });
@@ -365,7 +360,7 @@ function markAnswer(resultMap, userCorrect) {
 
 function renderMovementLabel(operation, power) {
   const direction = operation === "multiply" ? "left" : "right";
-  const y = rowY(2) - layout.rowGap / 2 + 5;
+  const y = rowY(1) - layout.rowGap / 2 + 5;
   svg
     .select(".movement-path")
     .selectAll("text")
@@ -403,7 +398,7 @@ function animateDigits(sourceMap, operation, power, zeroFill, version) {
     .duration(760)
     .ease(d3.easeCubicInOut)
     .attr("x", (d) => xForExponent(d.targetExponent))
-    .attr("y", tokenY(2));
+    .attr("y", tokenY(1));
 }
 
 function updateSummary(parsed, result, settings, hasRevealed = false, userCorrect = false) {
@@ -514,6 +509,8 @@ function revealAnswer() {
     clearInputStates();
     markAnswer(displayMap(resultMap, settings.zeroFill), userCorrect);
     svg.selectAll("*").interrupt();
+    renderGrid(true);
+    renderDecimalMarks();
     svg.select(".static-result").selectAll("*").remove();
     svg.select(".moving").selectAll("*").remove();
     renderMovementLabel(settings.operation, settings.power);
@@ -524,7 +521,7 @@ function revealAnswer() {
       if (version !== renderVersion || !revealed) return;
       renderStaticDigits(
         svg.select(".static-result"),
-        digitDataFromMap(displayMap(resultMap, settings.zeroFill), 2, `result-${version}`, settings.zeroFill),
+        digitDataFromMap(displayMap(resultMap, settings.zeroFill), 1, `result-${version}`, settings.zeroFill),
       );
     }, digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, "timing").length * 360 + 770);
   } catch (error) {
