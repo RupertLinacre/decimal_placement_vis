@@ -571,8 +571,12 @@ function renderQuestion(parsed, settings) {
   calculationText.textContent = `What is ${before} ${operatorSymbol(settings.operation)} ${factor}?`;
 }
 
-function renderAnswerFeedback(userAnswer, userCorrect) {
-  const text = userAnswer ? `${userAnswer} is ${userCorrect ? "correct" : "incorrect"}` : "No answer entered";
+function renderAnswerFeedback(userAnswer, correctAnswer, userCorrect) {
+  const text = userAnswer
+    ? userCorrect
+      ? `${userAnswer} is correct`
+      : `${userAnswer} is incorrect. The correct answer is ${correctAnswer}`
+    : `No answer entered. The correct answer is ${correctAnswer}`;
   svg
     .select(".answer-feedback-layer")
     .selectAll("text")
@@ -721,7 +725,7 @@ function revealAnswer() {
     svg.select(".static-result").selectAll("*").remove();
     svg.select(".moving").selectAll("*").remove();
     renderQuestion(parsed, settings);
-    renderAnswerFeedback(userAnswer, userCorrect);
+    renderAnswerFeedback(userAnswer, formatValue(result), userCorrect);
 
     if (settings.clickAnimate) {
       enableClickAnimations(sourceMap, resultMap, settings, version);
