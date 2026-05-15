@@ -378,7 +378,7 @@ function renderAnswerInputs() {
   inputs.exit().remove();
 }
 
-function renderRevealButtons(sourceMap, settings, version) {
+function renderRevealButtons(sourceMap, resultMap, settings, version) {
   const data = movementData(sourceMap, settings.operation, settings.power, settings.zeroFill, `click-${version}`);
   const buttons = svg.select(".reveal-buttons").selectAll("foreignObject.reveal-button-host").data(data, (d) => d.id);
 
@@ -397,7 +397,13 @@ function renderRevealButtons(sourceMap, settings, version) {
 
   document.querySelectorAll(".reveal-button").forEach((button) => {
     button.addEventListener("click", () => {
-      const didAnimate = animateClickedDigit(data.find((digit) => digit.exponent === Number(button.dataset.exponent)), version);
+      const didAnimate = animateClickedDigit(
+        data.find((digit) => digit.exponent === Number(button.dataset.exponent)),
+        resultMap,
+        settings,
+        data.length,
+        version,
+      );
       if (didAnimate) {
         button.closest(".reveal-button-host")?.remove();
       }
@@ -578,11 +584,11 @@ function renderAnswerFeedback(userAnswer, userCorrect) {
     .text((d) => d);
 }
 
-function enableClickAnimations(sourceMap, settings, version) {
-  renderRevealButtons(sourceMap, settings, version);
+function enableClickAnimations(sourceMap, resultMap, settings, version) {
+  renderRevealButtons(sourceMap, resultMap, settings, version);
 }
 
-function animateClickedDigit(digit, version) {
+function animateClickedDigit(digit, resultMap, settings, totalReveals, version) {
   if (!digit || version !== renderVersion || clickedAnimationKeys.has(digit.id)) return false;
   clickedAnimationKeys.add(digit.id);
   clickedAnimationData.set(digit.id, digit);
@@ -590,16 +596,20 @@ function animateClickedDigit(digit, version) {
   animateDigitData([digit], version, false);
   window.setTimeout(() => {
     if (version !== renderVersion || !revealed) return;
-    clickedResultData.set(digit.id, {
-      ...digit,
-      id: `result-${version}-${digit.targetExponent}`,
-      exponent: digit.targetExponent,
-      rowIndex: 1,
-    });
-    renderStaticDigits(
-      svg.select(".static-result"),
-      Array.from(clickedResultData.values()),
-    );
+    if (clickedAnimationKeys.size >= totalReveals) {
+      renderStaticDigits(
+        svg.select(".static-result"),
+        digitDataFromMap(displayMap(resultMap, settings.zeroFill), 1, `result-${version}`, settings.zeroFill),
+      );
+    } else {
+      clickedResultData.set(digit.id, {
+        ...digit,
+        id: `result-${version}-${digit.targetExponent}`,
+        exponent: digit.targetExponent,
+        rowIndex: 1,
+      });
+      renderStaticDigits(svg.select(".static-result"), Array.from(clickedResultData.values()));
+    }
   }, animationSpeed().duration + 20);
   return true;
 }
@@ -714,7 +724,7 @@ function revealAnswer() {
     renderAnswerFeedback(userAnswer, userCorrect);
 
     if (settings.clickAnimate) {
-      enableClickAnimations(sourceMap, settings, version);
+      enableClickAnimations(sourceMap, resultMap, settings, version);
     } else {
       renderMovementArrows(sourceMap, settings.operation, settings.power, settings.zeroFill);
       animateDigits(sourceMap, settings.operation, settings.power, settings.zeroFill, version);
