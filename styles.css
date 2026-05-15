@@ -52,7 +52,6 @@ select {
   display: block;
 }
 
-.summary-kicker,
 .result-label {
   display: block;
   margin: 0 0 7px;
@@ -83,6 +82,10 @@ h1 {
   color: var(--mark);
   font-size: clamp(1.2rem, 2vw, 2rem);
   line-height: 1.15;
+}
+
+.question-panel strong {
+  color: var(--ink);
 }
 
 .control-bar {
@@ -313,36 +316,6 @@ h1 {
   height: 790px;
 }
 
-.math-summary {
-  display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(240px, 1.6fr) minmax(160px, 1fr);
-  gap: 12px;
-}
-
-.math-summary > div {
-  min-height: 92px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.9);
-  padding: 16px 18px;
-}
-
-.math-summary strong {
-  display: block;
-  overflow-wrap: anywhere;
-  font-size: clamp(1.35rem, 2.4vw, 2.4rem);
-  line-height: 1.05;
-}
-
-.movement-explain {
-  display: grid;
-  align-content: center;
-  color: var(--accent-dark);
-  font-size: clamp(1.05rem, 1.7vw, 1.45rem);
-  font-weight: 850;
-  line-height: 1.25;
-}
-
 .sr-only {
   position: absolute;
   width: 1px;
@@ -478,13 +451,27 @@ h1 {
   dominant-baseline: middle;
 }
 
+.answer-feedback {
+  fill: var(--ink);
+  font-size: 30px;
+  font-weight: 850;
+  text-anchor: middle;
+}
+
+.answer-feedback.correct-feedback {
+  fill: #2f7a56;
+}
+
+.answer-feedback.incorrect-feedback {
+  fill: #b93d3d;
+}
+
 @media (max-width: 1050px) {
   .app-shell {
     padding: 18px;
   }
 
-  .intro,
-  .math-summary {
+  .intro {
     grid-template-columns: 1fr;
   }
 
@@ -502,8 +489,7 @@ h1 {
     padding: 12px;
   }
 
-  .control-bar,
-  .math-summary {
+  .control-bar {
     grid-template-columns: 1fr;
   }
 

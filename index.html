@@ -75,9 +75,8 @@
           <button class="primary-action" id="animateButton" type="button">Check my answer</button>
         </form>
 
-        <div class="result-panel" aria-live="polite">
-          <span class="result-label">Check</span>
-          <strong id="calculationText">Write your answer, then check</strong>
+        <div class="result-panel question-panel" aria-live="polite">
+          <strong id="calculationText">What is 12.3 x 10?</strong>
         </div>
 
         <div class="error" id="inputError" role="alert" hidden></div>
@@ -90,17 +89,6 @@
           </p>
         </section>
 
-        <section class="math-summary" aria-label="Mathematical summary">
-          <div>
-            <span class="summary-kicker">Before</span>
-            <strong id="beforeNumber">12.3</strong>
-          </div>
-          <div class="movement-explain" id="movementText">Each digit moves 1 place to the left.</div>
-          <div>
-            <span class="summary-kicker">After</span>
-            <strong id="afterNumber">123</strong>
-          </div>
-        </section>
       </section>
     </main>
 

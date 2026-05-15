@@ -17,9 +17,6 @@ const zeroFillInput = document.querySelector("#zeroFill");
 const speedSelect = document.querySelector("#speedSelect");
 const inputError = document.querySelector("#inputError");
 const calculationText = document.querySelector("#calculationText");
-const beforeNumber = document.querySelector("#beforeNumber");
-const afterNumber = document.querySelector("#afterNumber");
-const movementText = document.querySelector("#movementText");
 
 const layout = {
   width: 1160,
@@ -360,7 +357,7 @@ function bindAnswerInputs() {
       svg.select(".movement-path").selectAll("*").remove();
       renderGrid(false);
       renderDecimalMarks();
-      calculationText.textContent = "Write your answer, then check";
+      svg.select(".answer-feedback-layer").selectAll("*").remove();
       clearInputStates();
     });
   });
@@ -390,6 +387,30 @@ function answerValue() {
   return Number(total.toPrecision(14));
 }
 
+function answerDisplay() {
+  const entries = Array.from(document.querySelectorAll(".answer-cell"))
+    .map((input) => ({
+      exponent: Number(input.dataset.exponent),
+      digit: input.value.trim(),
+    }))
+    .filter((entry) => entry.digit)
+    .sort((a, b) => b.exponent - a.exponent);
+
+  if (!entries.length) return "";
+
+  const highest = Math.max(...entries.map((entry) => entry.exponent), 0);
+  const lowest = Math.min(...entries.map((entry) => entry.exponent), 0);
+  const digitsByExponent = new Map(entries.map((entry) => [entry.exponent, entry.digit]));
+  let text = "";
+
+  for (let exponent = highest; exponent >= lowest; exponent -= 1) {
+    if (exponent === -1) text += ".";
+    text += digitsByExponent.get(exponent) || "0";
+  }
+
+  return text.replace(/^0+(?=\d)/, "") || "0";
+}
+
 function markAnswer(resultMap, userCorrect) {
   document.querySelectorAll(".answer-cell").forEach((input) => {
     const exponent = Number(input.dataset.exponent);
@@ -407,12 +428,8 @@ function renderMovementArrows(sourceMap, operation, power, zeroFill) {
     .map((digit, index) => ({
       ...digit,
       targetExponent: digit.exponent + direction * power,
-      lane: index,
     }))
     .filter((d) => d.targetExponent >= -3 && d.targetExponent <= 3);
-  const gapTop = rowY(0) + layout.rowHeight;
-  const laneStep = Math.min(8, Math.max(4, (layout.rowGap - 24) / Math.max(1, arrowData.length - 1)));
-  const line = d3.line().curve(d3.curveBumpX);
 
   const layer = svg.select(".movement-path");
   const defs = svg.select("defs").empty() ? svg.append("defs") : svg.select("defs");
@@ -436,22 +453,15 @@ function renderMovementArrows(sourceMap, operation, power, zeroFill) {
     .attr("fill", "#6c7d8c");
 
   layer
-    .selectAll("path.arrow-path")
+    .selectAll("line.arrow-path")
     .data(arrowData, (d) => d.id)
-    .join("path")
+    .join("line")
     .attr("class", (d) => `arrow-path${d.isPale ? " pale-arrow" : ""}`)
     .attr("marker-end", "url(#arrowHead)")
-    .attr("d", (d) => {
-      const y = gapTop + 14 + d.lane * laneStep;
-      const x1 = xForExponent(d.exponent);
-      const x2 = xForExponent(d.targetExponent);
-      const midY = y + (d.lane % 2 === 0 ? 10 : -8);
-      return line([
-        [x1, y],
-        [(x1 + x2) / 2, midY],
-        [x2, y],
-      ]);
-    });
+    .attr("x1", (d) => xForExponent(d.exponent))
+    .attr("y1", rowY(0) + layout.rowHeight)
+    .attr("x2", (d) => xForExponent(d.targetExponent))
+    .attr("y2", rowY(1));
 }
 
 function animateDigits(sourceMap, operation, power, zeroFill, version) {
@@ -484,21 +494,23 @@ function animateDigits(sourceMap, operation, power, zeroFill, version) {
     .attr("y", tokenY(1));
 }
 
-function updateSummary(parsed, result, settings, hasRevealed = false, userCorrect = false) {
+function renderQuestion(parsed, settings) {
   const before = formatValue(parsed.number);
-  const after = formatValue(result);
   const factor = 10 ** settings.power;
-  const direction = settings.operation === "multiply" ? "left" : "right";
-  const places = `${settings.power} place${settings.power === 1 ? "" : "s"}`;
+  calculationText.textContent = `What is ${before} ${operatorSymbol(settings.operation)} ${factor}?`;
+}
 
-  calculationText.textContent = hasRevealed
-    ? `${before} ${operatorSymbol(settings.operation)} ${factor} = ${after}. ${userCorrect ? "Correct." : "Not quite."}`
-    : `Try ${before} ${operatorSymbol(settings.operation)} ${factor}`;
-  beforeNumber.textContent = before;
-  afterNumber.textContent = hasRevealed ? after : "?";
-  movementText.textContent = hasRevealed
-    ? `Each digit moves ${places} to the ${direction}. The decimal point stays fixed; the digits change columns.`
-    : "Enter your answer in the place-value row, then press Check my answer.";
+function renderAnswerFeedback(userAnswer, userCorrect) {
+  const text = userAnswer ? `${userAnswer} is ${userCorrect ? "correct" : "incorrect"}` : "No answer entered";
+  svg
+    .select(".answer-feedback-layer")
+    .selectAll("text")
+    .data([text])
+    .join("text")
+    .attr("class", `answer-feedback ${userCorrect ? "correct-feedback" : "incorrect-feedback"}`)
+    .attr("x", layout.marginLeft + (COLUMNS.length * layout.columnWidth + layout.decimalGap) / 2)
+    .attr("y", rowY(2) + layout.rowHeight + 54)
+    .text((d) => d);
 }
 
 function clearError() {
@@ -510,9 +522,6 @@ function showError(message) {
   inputError.hidden = false;
   inputError.textContent = message;
   calculationText.textContent = "Choose a value that fits the chart";
-  beforeNumber.textContent = " ";
-  afterNumber.textContent = " ";
-  movementText.textContent = "The chart shows places from thousands through thousandths.";
 }
 
 function buildState() {
@@ -541,6 +550,7 @@ function ensureSvgGroups() {
     "movement-path",
     "static-result",
     "moving",
+    "answer-feedback-layer",
   ];
   rootGroups.forEach((className) => {
     if (svg.select(`.${className}`).empty()) svg.append("g").attr("class", className);
@@ -571,8 +581,9 @@ function renderBase(resetAnswer = false) {
     svg.select(".static-result").selectAll("*").remove();
     svg.select(".moving").selectAll("*").remove();
     svg.select(".movement-path").selectAll("*").remove();
+    svg.select(".answer-feedback-layer").selectAll("*").remove();
     if (resetAnswer) clearAnswerInputs();
-    updateSummary(parsed, result, settings, false, false);
+    renderQuestion(parsed, settings);
     updateUrlSettings();
   } catch (error) {
     showError(error.message);
@@ -587,6 +598,7 @@ function revealAnswer() {
   try {
     const { settings, parsed, sourceMap, result, resultMap } = buildState();
     const userCorrect = Math.abs(answerValue() - result) < 1e-10;
+    const userAnswer = answerDisplay();
     revealed = true;
 
     clearError();
@@ -598,7 +610,8 @@ function revealAnswer() {
     svg.select(".static-result").selectAll("*").remove();
     svg.select(".moving").selectAll("*").remove();
     renderMovementArrows(sourceMap, settings.operation, settings.power, settings.zeroFill);
-    updateSummary(parsed, result, settings, true, userCorrect);
+    renderQuestion(parsed, settings);
+    renderAnswerFeedback(userAnswer, userCorrect);
     animateDigits(sourceMap, settings.operation, settings.power, settings.zeroFill, version);
 
     window.setTimeout(() => {
