@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Place Value Multiplication and Division</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="workspace" aria-labelledby="app-title">
+        <div class="intro">
+          <div>
+            <p class="eyebrow">Place value movement</p>
+            <h1 id="app-title">Multiply and divide by powers of ten</h1>
+          </div>
+          <div class="result-panel" aria-live="polite">
+            <span class="result-label">Calculation</span>
+            <strong id="calculationText">12.3 x 10 = 123</strong>
+          </div>
+        </div>
+
+        <form class="control-bar" id="controls">
+          <label class="field number-field">
+            <span>Number</span>
+            <input id="numberInput" type="text" inputmode="decimal" value="12.3" autocomplete="off" />
+          </label>
+
+          <fieldset class="segmented" aria-label="Operation">
+            <legend>Operation</legend>
+            <label>
+              <input type="radio" name="operation" value="multiply" checked />
+              <span>x</span>
+            </label>
+            <label>
+              <input type="radio" name="operation" value="divide" />
+              <span>÷</span>
+            </label>
+          </fieldset>
+
+          <label class="field">
+            <span>Power of ten</span>
+            <select id="powerSelect">
+              <option value="1">10</option>
+              <option value="2">100</option>
+              <option value="3">1000</option>
+            </select>
+          </label>
+
+          <fieldset class="segmented wide" aria-label="Column header style">
+            <legend>Headers</legend>
+            <label>
+              <input type="radio" name="headerStyle" value="fractions" checked />
+              <span>Fractions</span>
+            </label>
+            <label>
+              <input type="radio" name="headerStyle" value="words" />
+              <span>Words</span>
+            </label>
+          </fieldset>
+
+          <label class="toggle">
+            <input id="zeroFill" type="checkbox" />
+            <span>Show empty columns as 0</span>
+          </label>
+
+          <button class="primary-action" id="replayButton" type="button">Replay</button>
+        </form>
+
+        <div class="error" id="inputError" role="alert" hidden></div>
+
+        <section class="stage-card" aria-label="Place value animation">
+          <svg id="placeValueSvg" role="img" aria-labelledby="svgTitle svgDescription"></svg>
+          <h2 id="svgTitle" class="sr-only">Digits moving through place value columns</h2>
+          <p id="svgDescription" class="sr-only">
+            Each digit moves left for multiplication by powers of ten and right for division by powers of ten.
+          </p>
+        </section>
+
+        <section class="math-summary" aria-label="Mathematical summary">
+          <div>
+            <span class="summary-kicker">Before</span>
+            <strong id="beforeNumber">12.3</strong>
+          </div>
+          <div class="movement-explain" id="movementText">Each digit moves 1 place to the left.</div>
+          <div>
+            <span class="summary-kicker">After</span>
+            <strong id="afterNumber">123</strong>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <script defer src="./app.js"></script>
+  </body>
+</html>
