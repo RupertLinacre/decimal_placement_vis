@@ -440,8 +440,8 @@ h1 {
   width: 100%;
   height: 100%;
   border: 2px solid transparent;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.76);
+  border-radius: 0;
+  background: transparent;
   color: var(--ink);
   font-size: 54px;
   font-weight: 800;
@@ -451,18 +451,14 @@ h1 {
 
 .answer-cell:focus {
   outline: 3px solid var(--accent-soft);
-  border-color: var(--accent);
-  background: white;
 }
 
 .answer-correct {
-  border-color: #2f8a5f;
-  background: #e4f5ed;
+  color: var(--ink);
 }
 
 .answer-incorrect {
-  border-color: #b93d3d;
-  background: #fff0f0;
+  color: #b93d3d;
 }
 
 .row-label {
