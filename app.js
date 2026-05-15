@@ -43,6 +43,8 @@ const formatter = new Intl.NumberFormat("en-GB", {
 let renderVersion = 0;
 let revealed = false;
 let clickedAnimationKeys = new Set();
+let clickedAnimationData = new Map();
+let clickedResultData = new Map();
 
 function getSettings() {
   return {
@@ -395,8 +397,10 @@ function renderRevealButtons(sourceMap, settings, version) {
 
   document.querySelectorAll(".reveal-button").forEach((button) => {
     button.addEventListener("click", () => {
-      animateClickedDigit(data.find((digit) => digit.exponent === Number(button.dataset.exponent)), version);
-      button.disabled = true;
+      const didAnimate = animateClickedDigit(data.find((digit) => digit.exponent === Number(button.dataset.exponent)), version);
+      if (didAnimate) {
+        button.closest(".reveal-button-host")?.remove();
+      }
     });
   });
 }
@@ -579,24 +583,25 @@ function enableClickAnimations(sourceMap, settings, version) {
 }
 
 function animateClickedDigit(digit, version) {
-  if (!digit || version !== renderVersion || clickedAnimationKeys.has(digit.id)) return;
+  if (!digit || version !== renderVersion || clickedAnimationKeys.has(digit.id)) return false;
   clickedAnimationKeys.add(digit.id);
-  renderMovementArrowData([digit]);
+  clickedAnimationData.set(digit.id, digit);
+  renderMovementArrowData(Array.from(clickedAnimationData.values()));
   animateDigitData([digit], version, false);
   window.setTimeout(() => {
     if (version !== renderVersion || !revealed) return;
+    clickedResultData.set(digit.id, {
+      ...digit,
+      id: `result-${version}-${digit.targetExponent}`,
+      exponent: digit.targetExponent,
+      rowIndex: 1,
+    });
     renderStaticDigits(
       svg.select(".static-result"),
-      [
-        {
-          ...digit,
-          id: `result-${version}-${digit.targetExponent}`,
-          exponent: digit.targetExponent,
-          rowIndex: 1,
-        },
-      ],
+      Array.from(clickedResultData.values()),
     );
   }, animationSpeed().duration + 20);
+  return true;
 }
 
 function clearError() {
@@ -648,6 +653,8 @@ function renderBase(resetAnswer = false) {
   renderVersion += 1;
   revealed = false;
   clickedAnimationKeys = new Set();
+  clickedAnimationData = new Map();
+  clickedResultData = new Map();
 
   try {
     const { settings, parsed, sourceMap, result } = buildState();
@@ -685,6 +692,8 @@ function revealAnswer() {
   renderVersion += 1;
   const version = renderVersion;
   clickedAnimationKeys = new Set();
+  clickedAnimationData = new Map();
+  clickedResultData = new Map();
 
   try {
     const { settings, parsed, sourceMap, result, resultMap } = buildState();
