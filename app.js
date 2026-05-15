@@ -376,6 +376,31 @@ function renderAnswerInputs() {
   inputs.exit().remove();
 }
 
+function renderRevealButtons(sourceMap, settings, version) {
+  const data = movementData(sourceMap, settings.operation, settings.power, settings.zeroFill, `click-${version}`);
+  const buttons = svg.select(".reveal-buttons").selectAll("foreignObject.reveal-button-host").data(data, (d) => d.id);
+
+  buttons
+    .enter()
+    .append("foreignObject")
+    .attr("class", "reveal-button-host")
+    .merge(buttons)
+    .attr("x", (d) => xForExponent(d.exponent) - 34)
+    .attr("y", rowY(0) + layout.rowHeight + 14)
+    .attr("width", 68)
+    .attr("height", 34)
+    .html((d) => `<button class="reveal-button" type="button" data-exponent="${d.exponent}">reveal</button>`);
+
+  buttons.exit().remove();
+
+  document.querySelectorAll(".reveal-button").forEach((button) => {
+    button.addEventListener("click", () => {
+      animateClickedDigit(data.find((digit) => digit.exponent === Number(button.dataset.exponent)), version);
+      button.disabled = true;
+    });
+  });
+}
+
 function bindAnswerInputs() {
   document.querySelectorAll(".answer-cell").forEach((input) => {
     input.addEventListener("input", () => {
@@ -384,6 +409,7 @@ function bindAnswerInputs() {
       svg.select(".moving").selectAll("*").remove();
       svg.select(".static-result").selectAll("*").remove();
       svg.select(".movement-path").selectAll("*").remove();
+      svg.select(".reveal-buttons").selectAll("*").remove();
       renderGrid(false);
       renderDecimalMarks();
       svg.select(".answer-feedback-layer").selectAll("*").remove();
@@ -549,23 +575,7 @@ function renderAnswerFeedback(userAnswer, userCorrect) {
 }
 
 function enableClickAnimations(sourceMap, settings, version) {
-  const data = movementData(sourceMap, settings.operation, settings.power, settings.zeroFill, `click-${version}`);
-  const byExponent = new Map(data.map((digit) => [digit.exponent, digit]));
-  svg
-    .select(".static-start")
-    .selectAll("text.cell-digit")
-    .classed("clickable-digit", (d) => byExponent.has(d.exponent))
-    .attr("role", (d) => (byExponent.has(d.exponent) ? "button" : null))
-    .attr("tabindex", (d) => (byExponent.has(d.exponent) ? 0 : null))
-    .on("click", (event, d) => {
-      animateClickedDigit(byExponent.get(d.exponent), version);
-    })
-    .on("keydown", (event, d) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        animateClickedDigit(byExponent.get(d.exponent), version);
-      }
-    });
+  renderRevealButtons(sourceMap, settings, version);
 }
 
 function animateClickedDigit(digit, version) {
@@ -573,6 +583,20 @@ function animateClickedDigit(digit, version) {
   clickedAnimationKeys.add(digit.id);
   renderMovementArrowData([digit]);
   animateDigitData([digit], version, false);
+  window.setTimeout(() => {
+    if (version !== renderVersion || !revealed) return;
+    renderStaticDigits(
+      svg.select(".static-result"),
+      [
+        {
+          ...digit,
+          id: `result-${version}-${digit.targetExponent}`,
+          exponent: digit.targetExponent,
+          rowIndex: 1,
+        },
+      ],
+    );
+  }, animationSpeed().duration + 20);
 }
 
 function clearError() {
@@ -610,6 +634,7 @@ function ensureSvgGroups() {
     "static-start",
     "answer-inputs",
     "movement-path",
+    "reveal-buttons",
     "static-result",
     "moving",
     "answer-feedback-layer",
@@ -645,6 +670,7 @@ function renderBase(resetAnswer = false) {
     svg.select(".static-result").selectAll("*").remove();
     svg.select(".moving").selectAll("*").remove();
     svg.select(".movement-path").selectAll("*").remove();
+    svg.select(".reveal-buttons").selectAll("*").remove();
     svg.select(".answer-feedback-layer").selectAll("*").remove();
     if (resetAnswer) clearAnswerInputs();
     renderQuestion(parsed, settings);
@@ -679,10 +705,6 @@ function revealAnswer() {
     renderAnswerFeedback(userAnswer, userCorrect);
 
     if (settings.clickAnimate) {
-      renderStaticDigits(
-        svg.select(".static-result"),
-        digitDataFromMap(displayMap(resultMap, settings.zeroFill), 1, `result-${version}`, settings.zeroFill),
-      );
       enableClickAnimations(sourceMap, settings, version);
     } else {
       renderMovementArrows(sourceMap, settings.operation, settings.power, settings.zeroFill);
