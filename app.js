@@ -16,6 +16,7 @@ const powerSelect = document.querySelector("#powerSelect");
 const zeroFillInput = document.querySelector("#zeroFill");
 const hideGridInput = document.querySelector("#hideGrid");
 const speedSlider = document.querySelector("#speedSlider");
+const clickAnimateInput = document.querySelector("#clickAnimate");
 const inputError = document.querySelector("#inputError");
 const calculationText = document.querySelector("#calculationText");
 
@@ -41,6 +42,7 @@ const formatter = new Intl.NumberFormat("en-GB", {
 
 let renderVersion = 0;
 let revealed = false;
+let clickedAnimationKeys = new Set();
 
 function getSettings() {
   return {
@@ -51,6 +53,7 @@ function getSettings() {
     zeroFill: zeroFillInput.checked,
     hideGrid: hideGridInput.checked,
     speed: Number(speedSlider.value),
+    clickAnimate: clickAnimateInput.checked,
   };
 }
 
@@ -62,6 +65,7 @@ function applyUrlSettings() {
   const zeros = params.get("zeros");
   const grid = params.get("grid");
   const speed = params.get("speed");
+  const animate = params.get("animate");
   const number = params.get("number");
 
   if (number !== null) numberInput.value = number;
@@ -84,6 +88,8 @@ function applyUrlSettings() {
   if (speed !== null && !Number.isNaN(Number(speed))) {
     speedSlider.value = String(Math.min(2, Math.max(0.25, Number(speed))));
   }
+  if (animate === "click") clickAnimateInput.checked = true;
+  if (animate === "auto") clickAnimateInput.checked = false;
 }
 
 function updateUrlSettings() {
@@ -96,6 +102,7 @@ function updateUrlSettings() {
   params.set("zeros", settings.zeroFill ? "1" : "0");
   params.set("grid", settings.hideGrid ? "0" : "1");
   params.set("speed", String(settings.speed));
+  params.set("animate", settings.clickAnimate ? "click" : "auto");
   window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
 }
 
@@ -325,6 +332,16 @@ function digitDataFromMap(map, rowIndex, prefix, paleZeros = false) {
   })).sort((a, b) => b.exponent - a.exponent);
 }
 
+function movementData(sourceMap, operation, power, zeroFill, prefix = "move") {
+  const direction = operation === "multiply" ? 1 : -1;
+  return digitDataFromMap(displayMap(sourceMap, zeroFill), 0, prefix, zeroFill)
+    .map((digit) => ({
+      ...digit,
+      targetExponent: digit.exponent + direction * power,
+    }))
+    .filter((d) => d.targetExponent >= -3 && d.targetExponent <= 3);
+}
+
 function renderStaticDigits(group, data) {
   const tokens = group.selectAll("text.cell-digit").data(data, (d) => d.id);
   tokens
@@ -333,6 +350,7 @@ function renderStaticDigits(group, data) {
     .attr("class", "cell-digit")
     .merge(tokens)
     .attr("class", (d) => `cell-digit${d.isPale ? " pale-digit" : ""}`)
+    .attr("data-exponent", (d) => d.exponent)
     .attr("x", (d) => xForExponent(d.exponent))
     .attr("y", (d) => tokenY(d.rowIndex))
     .text((d) => d.digit);
@@ -434,14 +452,10 @@ function markAnswer(resultMap, userCorrect) {
 }
 
 function renderMovementArrows(sourceMap, operation, power, zeroFill) {
-  const direction = operation === "multiply" ? 1 : -1;
-  const arrowData = digitDataFromMap(displayMap(sourceMap, zeroFill), 0, "arrow", zeroFill)
-    .map((digit, index) => ({
-      ...digit,
-      targetExponent: digit.exponent + direction * power,
-    }))
-    .filter((d) => d.targetExponent >= -3 && d.targetExponent <= 3);
+  renderMovementArrowData(movementData(sourceMap, operation, power, zeroFill, "arrow"));
+}
 
+function renderMovementArrowData(arrowData) {
   const layer = svg.select(".movement-path");
   const defs = svg.select("defs").empty() ? svg.append("defs") : svg.select("defs");
   defs
@@ -479,20 +493,26 @@ function animateDigits(sourceMap, operation, power, zeroFill, version) {
   const movingLayer = svg.select(".moving");
   movingLayer.selectAll("*").remove();
 
-  const direction = operation === "multiply" ? 1 : -1;
+  animateDigitData(movementData(sourceMap, operation, power, zeroFill, `moving-${version}`), version, true);
+}
+
+function animationSpeed() {
   const speedFactor = Math.min(2, Math.max(0.25, getSettings().speed || 0.5));
-  const speed = {
+  return {
     delay: BASE_ANIMATION.delay / speedFactor,
     duration: BASE_ANIMATION.duration / speedFactor,
   };
-  const data = digitDataFromMap(displayMap(sourceMap, zeroFill), 0, `moving-${version}`, zeroFill).map((digit, index) => ({
+}
+
+function animateDigitData(data, version, staggered) {
+  const speed = animationSpeed();
+  const movingLayer = svg.select(".moving");
+  const animatedData = data.map((digit, index) => ({
     ...digit,
-    targetExponent: digit.exponent + direction * power,
-    delay: index * speed.delay,
+    delay: staggered ? index * speed.delay : 0,
   }));
 
-  const visibleData = data.filter((d) => d.targetExponent >= -3 && d.targetExponent <= 3);
-  const tokens = movingLayer.selectAll("text.moving-digit").data(visibleData, (d) => d.id);
+  const tokens = movingLayer.selectAll("text.moving-digit").data(animatedData, (d) => d.id);
 
   tokens
     .enter()
@@ -526,6 +546,33 @@ function renderAnswerFeedback(userAnswer, userCorrect) {
     .attr("x", layout.marginLeft + (COLUMNS.length * layout.columnWidth + layout.decimalGap) / 2)
     .attr("y", rowY(2) + layout.rowHeight + 54)
     .text((d) => d);
+}
+
+function enableClickAnimations(sourceMap, settings, version) {
+  const data = movementData(sourceMap, settings.operation, settings.power, settings.zeroFill, `click-${version}`);
+  const byExponent = new Map(data.map((digit) => [digit.exponent, digit]));
+  svg
+    .select(".static-start")
+    .selectAll("text.cell-digit")
+    .classed("clickable-digit", (d) => byExponent.has(d.exponent))
+    .attr("role", (d) => (byExponent.has(d.exponent) ? "button" : null))
+    .attr("tabindex", (d) => (byExponent.has(d.exponent) ? 0 : null))
+    .on("click", (event, d) => {
+      animateClickedDigit(byExponent.get(d.exponent), version);
+    })
+    .on("keydown", (event, d) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        animateClickedDigit(byExponent.get(d.exponent), version);
+      }
+    });
+}
+
+function animateClickedDigit(digit, version) {
+  if (!digit || version !== renderVersion || clickedAnimationKeys.has(digit.id)) return;
+  clickedAnimationKeys.add(digit.id);
+  renderMovementArrowData([digit]);
+  animateDigitData([digit], version, false);
 }
 
 function clearError() {
@@ -575,6 +622,7 @@ function ensureSvgGroups() {
 function renderBase(resetAnswer = false) {
   renderVersion += 1;
   revealed = false;
+  clickedAnimationKeys = new Set();
 
   try {
     const { settings, parsed, sourceMap, result } = buildState();
@@ -610,6 +658,7 @@ function renderBase(resetAnswer = false) {
 function revealAnswer() {
   renderVersion += 1;
   const version = renderVersion;
+  clickedAnimationKeys = new Set();
 
   try {
     const { settings, parsed, sourceMap, result, resultMap } = buildState();
@@ -626,23 +675,28 @@ function revealAnswer() {
     renderDecimalMarks();
     svg.select(".static-result").selectAll("*").remove();
     svg.select(".moving").selectAll("*").remove();
-    renderMovementArrows(sourceMap, settings.operation, settings.power, settings.zeroFill);
     renderQuestion(parsed, settings);
     renderAnswerFeedback(userAnswer, userCorrect);
-    animateDigits(sourceMap, settings.operation, settings.power, settings.zeroFill, version);
 
-    const speedFactor = Math.min(2, Math.max(0.25, settings.speed || 0.5));
-    const speed = {
-      delay: BASE_ANIMATION.delay / speedFactor,
-      duration: BASE_ANIMATION.duration / speedFactor,
-    };
-    window.setTimeout(() => {
-      if (version !== renderVersion || !revealed) return;
+    if (settings.clickAnimate) {
       renderStaticDigits(
         svg.select(".static-result"),
         digitDataFromMap(displayMap(resultMap, settings.zeroFill), 1, `result-${version}`, settings.zeroFill),
       );
-    }, digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, "timing").length * speed.delay + speed.duration + 20);
+      enableClickAnimations(sourceMap, settings, version);
+    } else {
+      renderMovementArrows(sourceMap, settings.operation, settings.power, settings.zeroFill);
+      animateDigits(sourceMap, settings.operation, settings.power, settings.zeroFill, version);
+
+      const speed = animationSpeed();
+      window.setTimeout(() => {
+        if (version !== renderVersion || !revealed) return;
+        renderStaticDigits(
+          svg.select(".static-result"),
+          digitDataFromMap(displayMap(resultMap, settings.zeroFill), 1, `result-${version}`, settings.zeroFill),
+        );
+      }, digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, "timing").length * speed.delay + speed.duration + 20);
+    }
     updateUrlSettings();
   } catch (error) {
     showError(error.message);

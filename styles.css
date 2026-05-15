@@ -394,6 +394,18 @@ h1 {
   dominant-baseline: middle;
 }
 
+.clickable-digit {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 8px;
+}
+
+.clickable-digit:hover,
+.clickable-digit:focus {
+  fill: var(--accent);
+}
+
 .moving-digit {
   fill: var(--accent);
   filter: drop-shadow(0 8px 8px rgba(22, 79, 76, 0.18));
