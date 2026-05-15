@@ -10,7 +10,7 @@ const COLUMNS = [
 
 const svg = d3.select("#placeValueSvg");
 const controls = document.querySelector("#controls");
-const replayButton = document.querySelector("#replayButton");
+const animateButton = document.querySelector("#animateButton");
 const numberInput = document.querySelector("#numberInput");
 const powerSelect = document.querySelector("#powerSelect");
 const zeroFillInput = document.querySelector("#zeroFill");
@@ -21,15 +21,16 @@ const afterNumber = document.querySelector("#afterNumber");
 const movementText = document.querySelector("#movementText");
 
 const layout = {
-  width: 1120,
-  height: 540,
+  width: 1160,
+  height: 700,
   marginLeft: 142,
   marginTop: 28,
   columnWidth: 132,
-  headerHeight: 112,
-  rowHeight: 142,
+  headerHeight: 118,
+  rowHeight: 128,
   rowGap: 18,
-  tokenSize: 56,
+  digitInset: 12,
+  decimalGap: 34,
 };
 
 const formatter = new Intl.NumberFormat("en-GB", {
@@ -38,6 +39,7 @@ const formatter = new Intl.NumberFormat("en-GB", {
 });
 
 let renderVersion = 0;
+let revealed = false;
 
 function getSettings() {
   return {
@@ -62,7 +64,7 @@ function parseNumber(value) {
   const [integerPartRaw, decimalPartRaw = ""] = value.split(".");
   const integerPart = (integerPartRaw || "0").replace(/^0+(?=\d)/, "");
   const decimalPart = decimalPartRaw;
-  const highestExponent = integerPart === "0" ? -1 : integerPart.length - 1;
+  const highestExponent = integerPart === "0" ? 0 : integerPart.length - 1;
   const lowestExponent = decimalPart.length ? -decimalPart.length : 0;
 
   if (highestExponent > 3 || lowestExponent < -3) {
@@ -98,12 +100,22 @@ function digitMap(parsed) {
   return map;
 }
 
-function shiftedDigitMap(sourceMap, operation, power) {
+function displayMap(baseMap, zeroFill) {
+  if (!zeroFill) return new Map(baseMap);
+  const map = new Map(baseMap);
+  COLUMNS.forEach((column) => {
+    if (!map.has(column.exponent)) {
+      map.set(column.exponent, "0");
+    }
+  });
+  return map;
+}
+
+function shiftedDigitMap(sourceMap, operation, power, zeroFill) {
   const direction = operation === "multiply" ? 1 : -1;
   const result = new Map();
-  sourceMap.forEach((digit, exponent) => {
-    const nextExponent = exponent + direction * power;
-    result.set(nextExponent, digit);
+  displayMap(sourceMap, zeroFill).forEach((digit, exponent) => {
+    result.set(exponent + direction * power, digit);
   });
   return result;
 }
@@ -123,9 +135,14 @@ function operatorSymbol(operation) {
   return operation === "multiply" ? "x" : "÷";
 }
 
+function xForIndex(index) {
+  const gap = index >= 4 ? layout.decimalGap : 0;
+  return layout.marginLeft + index * layout.columnWidth + gap;
+}
+
 function xForExponent(exponent) {
   const index = COLUMNS.findIndex((column) => column.exponent === exponent);
-  return layout.marginLeft + index * layout.columnWidth + layout.columnWidth / 2;
+  return xForIndex(index) + layout.columnWidth / 2;
 }
 
 function rowY(rowIndex) {
@@ -136,33 +153,32 @@ function tokenY(rowIndex) {
   return rowY(rowIndex) + layout.rowHeight / 2;
 }
 
+function decimalX() {
+  return layout.marginLeft + 4 * layout.columnWidth + layout.decimalGap / 2;
+}
+
 function renderHeaders(headerStyle) {
   const headers = svg.select(".headers").selectAll("g.header").data(COLUMNS, (d) => d.key);
 
   const entered = headers.enter().append("g").attr("class", "header");
-  entered.append("rect").attr("class", (d) => `column-header ${d.exponent < 0 ? "decimal-column" : ""}`);
+  entered.append("rect");
   entered.append("foreignObject").attr("class", "fraction-host");
   entered.append("text").attr("class", "header-text word-label");
 
   const merged = entered.merge(headers);
-  merged.attr("transform", (_, index) => `translate(${layout.marginLeft + index * layout.columnWidth},${layout.marginTop})`);
+  merged.attr("transform", (_, index) => `translate(${xForIndex(index)},${layout.marginTop})`);
   merged
     .select("rect")
     .attr("width", layout.columnWidth)
     .attr("height", layout.headerHeight)
-    .attr("class", (d) => {
-      const classes = ["column-header"];
-      if (d.exponent < 0) classes.push("decimal-column");
-      if (d.exponent === 0) classes.push("ones-column");
-      return classes.join(" ");
-    });
+    .attr("class", (d) => cellClass("column-header", d.exponent));
 
   merged
     .select(".fraction-host")
-    .attr("x", 8)
-    .attr("y", 34)
-    .attr("width", layout.columnWidth - 16)
-    .attr("height", 52)
+    .attr("x", 4)
+    .attr("y", 0)
+    .attr("width", layout.columnWidth - 8)
+    .attr("height", layout.headerHeight)
     .style("display", headerStyle === "fractions" ? null : "none")
     .html((d) => `<div class="fraction-label">${renderFraction(d)}</div>`);
 
@@ -182,152 +198,229 @@ function renderFraction(column) {
   return katex.renderToString(column.fraction, { throwOnError: false, displayMode: false });
 }
 
+function cellClass(base, exponent) {
+  const classes = [base];
+  if (exponent < 0) classes.push("decimal-column");
+  if (exponent === 0) classes.push("ones-column");
+  return classes.join(" ");
+}
+
 function renderGrid() {
-  const bodyRows = [0, 1];
-  const bodies = svg.select(".bodies").selectAll("g.body-row").data(bodyRows);
+  const rows = [
+    { index: 0, label: "start" },
+    { index: 1, label: "your answer" },
+    { index: 2, label: "correct" },
+  ];
+  const bodies = svg.select(".bodies").selectAll("g.body-row").data(rows, (d) => d.index);
   const enteredRows = bodies.enter().append("g").attr("class", "body-row");
   enteredRows.append("text").attr("class", "row-label");
-  enteredRows.append("line").attr("class", "row-rule");
   enteredRows.append("g").attr("class", "cells");
 
   const mergedRows = enteredRows.merge(bodies);
-  mergedRows.attr("transform", (d) => `translate(0,${rowY(d)})`);
+  mergedRows.attr("transform", (d) => `translate(0,${rowY(d.index)})`);
   mergedRows
     .select(".row-label")
     .attr("x", layout.marginLeft - 18)
     .attr("y", layout.rowHeight / 2)
-    .text((d) => (d === 0 ? "start" : "result"));
-  mergedRows
-    .select(".row-rule")
-    .attr("x1", layout.marginLeft - 8)
-    .attr("x2", layout.width - 36)
-    .attr("y1", layout.rowHeight)
-    .attr("y2", layout.rowHeight);
+    .text((d) => d.label);
 
-  mergedRows.each(function (row) {
+  mergedRows.each(function () {
     const cells = d3.select(this).select(".cells").selectAll("rect").data(COLUMNS, (d) => d.key);
     cells
       .enter()
       .append("rect")
       .merge(cells)
-      .attr("x", (_, index) => layout.marginLeft + index * layout.columnWidth)
+      .attr("x", (_, index) => xForIndex(index))
       .attr("y", 0)
       .attr("width", layout.columnWidth)
       .attr("height", layout.rowHeight)
-      .attr("class", (d) => {
-        const classes = ["column-body"];
-        if (d.exponent < 0) classes.push("decimal-column");
-        if (d.exponent === 0) classes.push("ones-column");
-        return classes.join(" ");
-      });
+      .attr("class", (d) => cellClass("column-body", d.exponent));
   });
+
+  bodies.exit().remove();
 }
 
-function renderZeros(group, occupied, rowIndex, zeroFill) {
-  const zeroData = zeroFill
-    ? COLUMNS.filter((column) => !occupied.has(column.exponent)).map((column) => ({
-        exponent: column.exponent,
-        rowIndex,
-      }))
-    : [];
+function renderDecimalMarks() {
+  const y1 = layout.marginTop;
+  const y2 = rowY(2) + layout.rowHeight;
+  const marks = [
+    { y: layout.marginTop + layout.headerHeight / 2, label: "." },
+    { y: tokenY(0), label: "." },
+    { y: tokenY(1), label: "." },
+    { y: tokenY(2), label: "." },
+  ];
 
-  group
-    .selectAll("text.zero-placeholder")
-    .data(zeroData, (d) => `${d.rowIndex}-${d.exponent}`)
+  svg
+    .select(".decimal-markers")
+    .selectAll("line")
+    .data([0])
+    .join("line")
+    .attr("class", "decimal-guide")
+    .attr("x1", decimalX())
+    .attr("x2", decimalX())
+    .attr("y1", y1)
+    .attr("y2", y2);
+
+  svg
+    .select(".decimal-markers")
+    .selectAll("text")
+    .data(marks)
     .join("text")
-    .attr("class", "zero-placeholder")
-    .attr("x", (d) => xForExponent(d.exponent))
-    .attr("y", (d) => tokenY(d.rowIndex))
-    .text("0");
+    .attr("class", "decimal-point")
+    .attr("x", decimalX())
+    .attr("y", (d) => d.y)
+    .text((d) => d.label);
 }
 
-function digitDataFromMap(map, rowIndex, prefix) {
+function digitDataFromMap(map, rowIndex, prefix, paleZeros = false) {
   return Array.from(map, ([exponent, digit]) => ({
-    id: `${prefix}-${exponent}-${digit}`,
+    id: `${prefix}-${exponent}`,
     exponent,
     digit,
     rowIndex,
+    isPale: paleZeros && digit === "0",
   })).sort((a, b) => b.exponent - a.exponent);
 }
 
 function renderStaticDigits(group, data) {
-  const tokens = group.selectAll("g.static-token").data(data, (d) => d.id);
-  const entered = tokens.enter().append("g").attr("class", "static-token");
-  entered.append("circle").attr("class", "digit-token").attr("r", layout.tokenSize / 2);
-  entered.append("text").attr("class", "digit-text");
-
-  entered
+  const tokens = group.selectAll("text.cell-digit").data(data, (d) => d.id);
+  tokens
+    .enter()
+    .append("text")
+    .attr("class", "cell-digit")
     .merge(tokens)
-    .attr("transform", (d) => `translate(${xForExponent(d.exponent)},${tokenY(d.rowIndex)})`)
-    .select(".digit-text")
+    .attr("class", (d) => `cell-digit${d.isPale ? " pale-digit" : ""}`)
+    .attr("x", (d) => xForExponent(d.exponent))
+    .attr("y", (d) => tokenY(d.rowIndex))
     .text((d) => d.digit);
 
   tokens.exit().remove();
 }
 
-function renderMovementLabels(operation, power) {
-  const direction = operation === "multiply" ? "left" : "right";
-  const sign = operation === "multiply" ? -1 : 1;
-  const arrowY = layout.marginTop + layout.headerHeight + layout.rowHeight + layout.rowGap / 2;
-  const startX = xForExponent(0);
-  const endX = startX + sign * power * layout.columnWidth;
-  const midX = (startX + endX) / 2;
-  const line = d3.line().curve(d3.curveBumpX);
-  const path = line([
-    [startX, arrowY],
-    [midX, arrowY + 34],
-    [endX, arrowY],
-  ]);
+function renderAnswerInputs() {
+  const host = svg.select(".answer-inputs");
+  const inputs = host.selectAll("foreignObject.answer-cell-host").data(COLUMNS, (d) => d.key);
 
-  svg.select(".movement-path").selectAll("path").data([path]).join("path").attr("class", "arrow-path").attr("d", (d) => d);
+  inputs
+    .enter()
+    .append("foreignObject")
+    .attr("class", "answer-cell-host")
+    .merge(inputs)
+    .attr("x", (_, index) => xForIndex(index) + layout.digitInset)
+    .attr("y", rowY(1) + layout.digitInset)
+    .attr("width", layout.columnWidth - layout.digitInset * 2)
+    .attr("height", layout.rowHeight - layout.digitInset * 2)
+    .html((d) => `<input class="answer-cell" data-exponent="${d.exponent}" maxlength="1" inputmode="numeric" aria-label="${d.word} answer digit" />`);
+
+  inputs.exit().remove();
+}
+
+function bindAnswerInputs() {
+  document.querySelectorAll(".answer-cell").forEach((input) => {
+    input.addEventListener("input", () => {
+      input.value = input.value.replace(/\D/g, "").slice(0, 1);
+      revealed = false;
+      svg.select(".moving").selectAll("*").remove();
+      svg.select(".static-result").selectAll("*").remove();
+      calculationText.textContent = "Write your answer, then animate";
+      clearInputStates();
+    });
+  });
+}
+
+function clearAnswerInputs() {
+  document.querySelectorAll(".answer-cell").forEach((input) => {
+    input.value = "";
+  });
+  clearInputStates();
+}
+
+function clearInputStates() {
+  document.querySelectorAll(".answer-cell").forEach((input) => {
+    input.classList.remove("answer-correct", "answer-incorrect");
+  });
+}
+
+function answerValue() {
+  let total = 0;
+  document.querySelectorAll(".answer-cell").forEach((input) => {
+    const digit = input.value.trim();
+    if (digit) {
+      total += Number(digit) * 10 ** Number(input.dataset.exponent);
+    }
+  });
+  return Number(total.toPrecision(14));
+}
+
+function markAnswer(resultMap, userCorrect) {
+  document.querySelectorAll(".answer-cell").forEach((input) => {
+    const exponent = Number(input.dataset.exponent);
+    const expected = resultMap.get(exponent) || "";
+    const entered = input.value.trim();
+    const cellCorrect = entered === expected || (!entered && (!expected || expected === "0"));
+    input.classList.toggle("answer-correct", userCorrect || cellCorrect);
+    input.classList.toggle("answer-incorrect", !userCorrect && !cellCorrect);
+  });
+}
+
+function renderMovementLabel(operation, power) {
+  const direction = operation === "multiply" ? "left" : "right";
+  const y = rowY(2) - layout.rowGap / 2 + 5;
   svg
     .select(".movement-path")
     .selectAll("text")
     .data([`${power} place${power === 1 ? "" : "s"} ${direction}`])
     .join("text")
     .attr("class", "arrow-label")
-    .attr("x", midX)
-    .attr("y", arrowY - 10)
+    .attr("x", layout.marginLeft + (COLUMNS.length * layout.columnWidth + layout.decimalGap) / 2)
+    .attr("y", y)
     .text((d) => d);
 }
 
-function animateDigits(sourceMap, operation, power, version) {
+function animateDigits(sourceMap, operation, power, zeroFill, version) {
   const movingLayer = svg.select(".moving");
   movingLayer.selectAll("*").remove();
 
   const direction = operation === "multiply" ? 1 : -1;
-  const data = digitDataFromMap(sourceMap, 0, `moving-${version}`).map((digit, index) => ({
+  const data = digitDataFromMap(displayMap(sourceMap, zeroFill), 0, `moving-${version}`, zeroFill).map((digit, index) => ({
     ...digit,
     targetExponent: digit.exponent + direction * power,
-    delay: index * 420,
+    delay: index * 360,
   }));
 
   const visibleData = data.filter((d) => d.targetExponent >= -3 && d.targetExponent <= 3);
-  const tokens = movingLayer.selectAll("g.moving-token").data(visibleData, (d) => d.id);
-  const entered = tokens.enter().append("g").attr("class", "moving-token");
-  entered.append("circle").attr("class", "digit-token").attr("r", layout.tokenSize / 2);
-  entered.append("text").attr("class", "digit-text").text((d) => d.digit);
+  const tokens = movingLayer.selectAll("text.moving-digit").data(visibleData, (d) => d.id);
 
-  entered
-    .attr("transform", (d) => `translate(${xForExponent(d.exponent)},${tokenY(0)})`)
+  tokens
+    .enter()
+    .append("text")
+    .attr("class", (d) => `moving-digit cell-digit${d.isPale ? " pale-digit" : ""}`)
+    .attr("x", (d) => xForExponent(d.exponent))
+    .attr("y", tokenY(0))
+    .text((d) => d.digit)
     .transition()
     .delay((d) => d.delay)
-    .duration(780)
+    .duration(760)
     .ease(d3.easeCubicInOut)
-    .attr("transform", (d) => `translate(${xForExponent(d.targetExponent)},${tokenY(1)})`);
+    .attr("x", (d) => xForExponent(d.targetExponent))
+    .attr("y", tokenY(2));
 }
 
-function updateSummary(parsed, result, settings) {
+function updateSummary(parsed, result, settings, hasRevealed = false, userCorrect = false) {
   const before = formatValue(parsed.number);
   const after = formatValue(result);
   const factor = 10 ** settings.power;
   const direction = settings.operation === "multiply" ? "left" : "right";
   const places = `${settings.power} place${settings.power === 1 ? "" : "s"}`;
 
-  calculationText.textContent = `${before} ${operatorSymbol(settings.operation)} ${factor} = ${after}`;
+  calculationText.textContent = hasRevealed
+    ? `${before} ${operatorSymbol(settings.operation)} ${factor} = ${after}. ${userCorrect ? "Correct." : "Not quite."}`
+    : `Try ${before} ${operatorSymbol(settings.operation)} ${factor}`;
   beforeNumber.textContent = before;
-  afterNumber.textContent = after;
-  movementText.textContent = `Each digit moves ${places} to the ${direction}. The decimal point stays fixed; the digits change columns.`;
+  afterNumber.textContent = hasRevealed ? after : "?";
+  movementText.textContent = hasRevealed
+    ? `Each digit moves ${places} to the ${direction}. The decimal point stays fixed; the digits change columns.`
+    : "Enter your answer in the place-value row, then press Animate.";
 }
 
 function clearError() {
@@ -344,57 +437,110 @@ function showError(message) {
   movementText.textContent = "The chart shows places from thousands through thousandths.";
 }
 
-function render() {
-  renderVersion += 1;
-  const version = renderVersion;
+function buildState() {
   const settings = getSettings();
+  const parsed = parseNumber(settings.rawNumber || "0");
+  const sourceMap = digitMap(parsed);
+  const result = calculateValue(parsed.number, settings.operation, settings.power);
+  const resultParsed = parseNumber(formatValue(result));
+  const resultMap = digitMap(resultParsed);
+  const movementMap = shiftedDigitMap(sourceMap, settings.operation, settings.power, false);
+
+  if (Math.max(...movementMap.keys(), 0) > 3 || Math.min(...movementMap.keys(), 0) < -3) {
+    throw new Error("That result moves beyond the chart. Try a smaller number or a smaller power of ten.");
+  }
+
+  return { settings, parsed, sourceMap, result, resultMap };
+}
+
+function ensureSvgGroups() {
+  const rootGroups = [
+    "headers",
+    "bodies",
+    "decimal-markers",
+    "static-start",
+    "answer-inputs",
+    "movement-path",
+    "static-result",
+    "moving",
+  ];
+  rootGroups.forEach((className) => {
+    if (svg.select(`.${className}`).empty()) svg.append("g").attr("class", className);
+  });
+}
+
+function renderBase(resetAnswer = false) {
+  renderVersion += 1;
+  revealed = false;
 
   try {
-    const parsed = parseNumber(settings.rawNumber || "0");
-    const sourceMap = digitMap(parsed);
-    const result = calculateValue(parsed.number, settings.operation, settings.power);
-    const resultParsed = parseNumber(formatValue(result));
-    const movementMap = shiftedDigitMap(sourceMap, settings.operation, settings.power);
-    const resultMap = digitMap(resultParsed);
-
-    if (Math.max(...movementMap.keys(), 0) > 3 || Math.min(...movementMap.keys(), 0) < -3) {
-      throw new Error("That result moves beyond the chart. Try a smaller number or a smaller power of ten.");
-    }
-
+    const { settings, parsed, sourceMap, result } = buildState();
     clearError();
     svg.attr("viewBox", `0 0 ${layout.width} ${layout.height}`);
     svg.selectAll("*").interrupt();
-
-    const rootGroups = ["headers", "bodies", "zeros-start", "zeros-result", "static-start", "static-result", "movement-path", "moving"];
-    rootGroups.forEach((className) => {
-      if (svg.select(`.${className}`).empty()) svg.append("g").attr("class", className);
-    });
+    svg.selectAll("*").remove();
+    ensureSvgGroups();
 
     renderHeaders(settings.headerStyle);
     renderGrid();
-    renderMovementLabels(settings.operation, settings.power);
-    renderZeros(svg.select(".zeros-start"), sourceMap, 0, settings.zeroFill);
-    renderZeros(svg.select(".zeros-result"), resultMap, 1, settings.zeroFill);
-    renderStaticDigits(svg.select(".static-start"), digitDataFromMap(sourceMap, 0, `start-${version}`));
-    renderStaticDigits(svg.select(".static-result"), []);
-    updateSummary(parsed, result, settings);
-
-    window.setTimeout(() => {
-      if (version !== renderVersion) return;
-      renderStaticDigits(svg.select(".static-result"), digitDataFromMap(resultMap, 1, `result-${version}`));
-    }, digitDataFromMap(sourceMap, 0, "timing").length * 420 + 790);
-
-    animateDigits(sourceMap, settings.operation, settings.power, version);
-
-    void movementMap;
+    renderDecimalMarks();
+    renderStaticDigits(
+      svg.select(".static-start"),
+      digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, `start-${renderVersion}`, settings.zeroFill),
+    );
+    renderAnswerInputs();
+    bindAnswerInputs();
+    svg.select(".static-result").selectAll("*").remove();
+    svg.select(".moving").selectAll("*").remove();
+    svg.select(".movement-path").selectAll("*").remove();
+    if (resetAnswer) clearAnswerInputs();
+    updateSummary(parsed, result, settings, false, false);
   } catch (error) {
     showError(error.message);
     svg.selectAll("*").remove();
   }
 }
 
-controls.addEventListener("input", render);
-controls.addEventListener("change", render);
-replayButton.addEventListener("click", render);
+function revealAnswer() {
+  renderVersion += 1;
+  const version = renderVersion;
 
-window.addEventListener("load", render);
+  try {
+    const { settings, parsed, sourceMap, result, resultMap } = buildState();
+    const userCorrect = Math.abs(answerValue() - result) < 1e-10;
+    revealed = true;
+
+    clearError();
+    clearInputStates();
+    markAnswer(displayMap(resultMap, settings.zeroFill), userCorrect);
+    svg.selectAll("*").interrupt();
+    svg.select(".static-result").selectAll("*").remove();
+    svg.select(".moving").selectAll("*").remove();
+    renderMovementLabel(settings.operation, settings.power);
+    updateSummary(parsed, result, settings, true, userCorrect);
+    animateDigits(sourceMap, settings.operation, settings.power, settings.zeroFill, version);
+
+    window.setTimeout(() => {
+      if (version !== renderVersion || !revealed) return;
+      renderStaticDigits(
+        svg.select(".static-result"),
+        digitDataFromMap(displayMap(resultMap, settings.zeroFill), 2, `result-${version}`, settings.zeroFill),
+      );
+    }, digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, "timing").length * 360 + 770);
+  } catch (error) {
+    showError(error.message);
+    svg.selectAll("*").remove();
+  }
+}
+
+controls.addEventListener("input", (event) => {
+  if (event.target.classList.contains("answer-cell")) return;
+  renderBase(true);
+});
+controls.addEventListener("change", (event) => {
+  if (event.target.classList.contains("answer-cell")) return;
+  renderBase(true);
+});
+animateButton.addEventListener("click", revealAnswer);
+
+window.addEventListener("load", () => renderBase(false));
