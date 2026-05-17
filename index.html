@@ -20,35 +20,16 @@
             <input id="numberInput" type="text" inputmode="decimal" value="12.3" autocomplete="off" />
           </label>
 
-          <fieldset class="segmented" aria-label="Operation">
-            <legend>Operation</legend>
-            <label>
-              <input type="radio" name="operation" value="multiply" checked />
-              <span>x</span>
-            </label>
-            <label>
-              <input type="radio" name="operation" value="divide" />
-              <span>÷</span>
-            </label>
-          </fieldset>
-
-          <label class="field">
-            <span>Power of ten</span>
-            <select id="powerSelect">
-              <option value="1">10</option>
-              <option value="2">100</option>
-              <option value="3">1000</option>
+          <label class="field operation-field">
+            <span>Operation</span>
+            <select id="operationPowerSelect">
+              <option value="multiply:1">× 10</option>
+              <option value="multiply:2">× 100</option>
+              <option value="multiply:3">× 1000</option>
+              <option value="divide:1">÷ 10</option>
+              <option value="divide:2">÷ 100</option>
+              <option value="divide:3">÷ 1000</option>
             </select>
-          </label>
-
-          <label class="toggle">
-            <input id="zeroFill" type="checkbox" />
-            <span>Show empty columns as 0</span>
-          </label>
-
-          <label class="toggle">
-            <input id="hideGrid" type="checkbox" />
-            <span>Hide grid</span>
           </label>
 
           <details class="settings-menu" id="settingsMenu">

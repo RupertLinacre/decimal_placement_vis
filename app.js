@@ -12,25 +12,23 @@ const svg = d3.select("#placeValueSvg");
 const controls = document.querySelector("#controls");
 const animateButton = document.querySelector("#animateButton");
 const numberInput = document.querySelector("#numberInput");
-const powerSelect = document.querySelector("#powerSelect");
-const zeroFillInput = document.querySelector("#zeroFill");
-const hideGridInput = document.querySelector("#hideGrid");
+const operationPowerSelect = document.querySelector("#operationPowerSelect");
 const speedSlider = document.querySelector("#speedSlider");
 const clickAnimateInput = document.querySelector("#clickAnimate");
 const inputError = document.querySelector("#inputError");
 const calculationText = document.querySelector("#calculationText");
 
 const layout = {
-  width: 1160,
-  height: 790,
-  marginLeft: 142,
-  marginTop: 28,
-  columnWidth: 132,
-  headerHeight: 118,
-  rowHeight: 128,
-  rowGap: 62,
-  digitInset: 12,
-  decimalGap: 34,
+  width: 900,
+  height: 520,
+  marginLeft: 92,
+  marginTop: 16,
+  columnWidth: 104,
+  headerHeight: 72,
+  rowHeight: 84,
+  rowGap: 38,
+  digitInset: 8,
+  decimalGap: 24,
 };
 
 const BASE_ANIMATION = { delay: 360, duration: 760 };
@@ -47,13 +45,12 @@ let clickedAnimationData = new Map();
 let clickedResultData = new Map();
 
 function getSettings() {
+  const [operation, rawPower] = operationPowerSelect.value.split(":");
   return {
     rawNumber: numberInput.value.trim(),
-    operation: new FormData(controls).get("operation"),
-    power: Number(powerSelect.value),
+    operation,
+    power: Number(rawPower),
     headerStyle: new FormData(controls).get("headerStyle"),
-    zeroFill: zeroFillInput.checked,
-    hideGrid: hideGridInput.checked,
     speed: Number(speedSlider.value),
     clickAnimate: clickAnimateInput.checked,
   };
@@ -61,29 +58,24 @@ function getSettings() {
 
 function applyUrlSettings() {
   const params = new URLSearchParams(window.location.search);
+  const transform = params.get("transform");
   const operation = params.get("operation");
   const power = params.get("power");
   const headers = params.get("headers");
-  const zeros = params.get("zeros");
-  const grid = params.get("grid");
   const speed = params.get("speed");
   const animate = params.get("animate");
   const number = params.get("number");
 
   if (number !== null) numberInput.value = number;
-  if (operation === "multiply" || operation === "divide") {
-    const input = controls.querySelector(`input[name="operation"][value="${operation}"]`);
-    if (input) input.checked = true;
+  if (["multiply:1", "multiply:2", "multiply:3", "divide:1", "divide:2", "divide:3"].includes(transform)) {
+    operationPowerSelect.value = transform;
+  } else if ((operation === "multiply" || operation === "divide") && ["1", "2", "3"].includes(power)) {
+    operationPowerSelect.value = `${operation}:${power}`;
   }
-  if (["1", "2", "3"].includes(power)) powerSelect.value = power;
   if (headers === "fractions" || headers === "words") {
     const input = controls.querySelector(`input[name="headerStyle"][value="${headers}"]`);
     if (input) input.checked = true;
   }
-  if (zeros === "1") zeroFillInput.checked = true;
-  if (zeros === "0") zeroFillInput.checked = false;
-  if (grid === "0") hideGridInput.checked = true;
-  if (grid === "1") hideGridInput.checked = false;
   if (speed === "slow") speedSlider.value = "0.5";
   if (speed === "normal") speedSlider.value = "1";
   if (speed === "fast") speedSlider.value = "2";
@@ -98,11 +90,8 @@ function updateUrlSettings() {
   const settings = getSettings();
   const params = new URLSearchParams();
   params.set("number", settings.rawNumber || "0");
-  params.set("operation", settings.operation);
-  params.set("power", String(settings.power));
+  params.set("transform", `${settings.operation}:${settings.power}`);
   params.set("headers", settings.headerStyle);
-  params.set("zeros", settings.zeroFill ? "1" : "0");
-  params.set("grid", settings.hideGrid ? "0" : "1");
   params.set("speed", String(settings.speed));
   params.set("animate", settings.clickAnimate ? "click" : "auto");
   window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
@@ -157,8 +146,7 @@ function digitMap(parsed) {
   return map;
 }
 
-function displayMap(baseMap, zeroFill) {
-  if (!zeroFill) return new Map(baseMap);
+function displayMap(baseMap) {
   const map = new Map(baseMap);
   COLUMNS.forEach((column) => {
     if (!map.has(column.exponent)) {
@@ -168,10 +156,10 @@ function displayMap(baseMap, zeroFill) {
   return map;
 }
 
-function shiftedDigitMap(sourceMap, operation, power, zeroFill) {
+function shiftedDigitMap(sourceMap, operation, power) {
   const direction = operation === "multiply" ? 1 : -1;
   const result = new Map();
-  displayMap(sourceMap, zeroFill).forEach((digit, exponent) => {
+  sourceMap.forEach((digit, exponent) => {
     result.set(exponent + direction * power, digit);
   });
   return result;
@@ -189,7 +177,7 @@ function formatValue(value) {
 }
 
 function operatorSymbol(operation) {
-  return operation === "multiply" ? "x" : "÷";
+  return operation === "multiply" ? "×" : "÷";
 }
 
 function xForIndex(index) {
@@ -300,10 +288,6 @@ function renderGrid(showCorrectRow = false) {
   bodies.exit().remove();
 }
 
-function applyGridVisibility(hideGrid) {
-  svg.classed("hide-grid", hideGrid);
-}
-
 function renderDecimalMarks() {
   const marks = [
     { y: tokenY(0) + 30, label: "." },
@@ -324,24 +308,40 @@ function renderDecimalMarks() {
     .text((d) => d.label);
 }
 
-function digitDataFromMap(map, rowIndex, prefix, paleZeros = false) {
+function filledDigitData(baseMap, rowIndex, prefix, isNeeded = () => false) {
+  return Array.from(displayMap(baseMap), ([exponent, digit]) => ({
+    id: `${prefix}-${exponent}`,
+    exponent,
+    digit,
+    rowIndex,
+    isPale: digit === "0" && !baseMap.has(exponent) && !isNeeded(exponent),
+  })).sort((a, b) => b.exponent - a.exponent);
+}
+
+function digitDataFromMap(map, rowIndex, prefix) {
   return Array.from(map, ([exponent, digit]) => ({
     id: `${prefix}-${exponent}`,
     exponent,
     digit,
     rowIndex,
-    isPale: paleZeros && digit === "0",
+    isPale: false,
   })).sort((a, b) => b.exponent - a.exponent);
 }
 
-function movementData(sourceMap, operation, power, zeroFill, prefix = "move") {
+function movementData(sourceMap, resultMap, operation, power, prefix = "move") {
   const direction = operation === "multiply" ? 1 : -1;
-  return digitDataFromMap(displayMap(sourceMap, zeroFill), 0, prefix, zeroFill)
+  return filledDigitData(sourceMap, 0, prefix, (exponent) => {
+    const targetExponent = exponent + direction * power;
+    return resultMap.get(targetExponent) === "0";
+  })
     .map((digit) => ({
       ...digit,
       targetExponent: digit.exponent + direction * power,
     }))
-    .filter((d) => d.targetExponent >= -3 && d.targetExponent <= 3);
+    .filter((digit) => {
+      if (digit.targetExponent < -3 || digit.targetExponent > 3) return false;
+      return sourceMap.has(digit.exponent) || resultMap.get(digit.targetExponent) === "0";
+    });
 }
 
 function renderStaticDigits(group, data) {
@@ -373,13 +373,16 @@ function renderAnswerInputs() {
     .attr("y", rowY(2) + layout.digitInset)
     .attr("width", layout.columnWidth - layout.digitInset * 2)
     .attr("height", layout.rowHeight - layout.digitInset * 2)
-    .html((d) => `<input class="answer-cell" data-exponent="${d.exponent}" maxlength="1" inputmode="numeric" aria-label="${d.word} answer digit" />`);
+    .html(
+      (d, index) =>
+        `<input class="answer-cell" data-exponent="${d.exponent}" data-column-index="${index}" maxlength="1" inputmode="numeric" aria-label="${d.word} answer digit" />`,
+    );
 
   inputs.exit().remove();
 }
 
 function renderRevealButtons(sourceMap, resultMap, settings, version) {
-  const data = movementData(sourceMap, settings.operation, settings.power, settings.zeroFill, `click-${version}`);
+  const data = movementData(sourceMap, resultMap, settings.operation, settings.power, `click-${version}`);
   const buttons = svg.select(".reveal-buttons").selectAll("foreignObject.reveal-button-host").data(data, (d) => d.id);
 
   buttons
@@ -413,8 +416,9 @@ function renderRevealButtons(sourceMap, resultMap, settings, version) {
 
 function bindAnswerInputs() {
   document.querySelectorAll(".answer-cell").forEach((input) => {
-    input.addEventListener("input", () => {
-      input.value = input.value.replace(/\D/g, "").slice(0, 1);
+    input.addEventListener("input", (event) => {
+      const digit = event.data?.match(/\d/)?.[0] || input.value.match(/\d/)?.[0] || "";
+      input.value = digit;
       revealed = false;
       svg.select(".moving").selectAll("*").remove();
       svg.select(".static-result").selectAll("*").remove();
@@ -424,8 +428,40 @@ function bindAnswerInputs() {
       renderDecimalMarks();
       svg.select(".answer-feedback-layer").selectAll("*").remove();
       clearInputStates();
+      if (digit) focusAnswerCell(input, 1);
+    });
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Backspace" && !input.value) {
+        event.preventDefault();
+        focusAnswerCell(input, -1, true);
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        focusAnswerCell(input, -1);
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        focusAnswerCell(input, 1);
+      }
     });
   });
+}
+
+function answerCells() {
+  return Array.from(document.querySelectorAll(".answer-cell")).sort(
+    (a, b) => Number(a.dataset.columnIndex) - Number(b.dataset.columnIndex),
+  );
+}
+
+function focusAnswerCell(currentInput, direction, clearTarget = false) {
+  const inputs = answerCells();
+  const currentIndex = inputs.indexOf(currentInput);
+  const target = inputs[currentIndex + direction];
+  if (!target) return;
+  target.focus();
+  target.select();
+  if (clearTarget) target.value = "";
 }
 
 function clearAnswerInputs() {
@@ -487,8 +523,30 @@ function markAnswer(resultMap, userCorrect) {
   });
 }
 
-function renderMovementArrows(sourceMap, operation, power, zeroFill) {
-  renderMovementArrowData(movementData(sourceMap, operation, power, zeroFill, "arrow"));
+function renderMovementArrows(sourceMap, resultMap, operation, power) {
+  renderMovementArrowData(movementData(sourceMap, resultMap, operation, power, "arrow"));
+}
+
+function shortenedArrowEndpoints(digit) {
+  const start = { x: xForExponent(digit.exponent), y: tokenY(0) };
+  const end = { x: xForExponent(digit.targetExponent), y: tokenY(1) };
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (!length) return { start, end };
+
+  const unit = { x: dx / length, y: dy / length };
+  const digitClearance = 34;
+  return {
+    start: {
+      x: start.x + unit.x * digitClearance,
+      y: start.y + unit.y * digitClearance,
+    },
+    end: {
+      x: end.x - unit.x * digitClearance,
+      y: end.y - unit.y * digitClearance,
+    },
+  };
 }
 
 function renderMovementArrowData(arrowData) {
@@ -519,17 +577,17 @@ function renderMovementArrowData(arrowData) {
     .join("line")
     .attr("class", (d) => `arrow-path${d.isPale ? " pale-arrow" : ""}`)
     .attr("marker-end", "url(#arrowHead)")
-    .attr("x1", (d) => xForExponent(d.exponent))
-    .attr("y1", rowY(0) + layout.rowHeight)
-    .attr("x2", (d) => xForExponent(d.targetExponent))
-    .attr("y2", rowY(1));
+    .attr("x1", (d) => shortenedArrowEndpoints(d).start.x)
+    .attr("y1", (d) => shortenedArrowEndpoints(d).start.y)
+    .attr("x2", (d) => shortenedArrowEndpoints(d).end.x)
+    .attr("y2", (d) => shortenedArrowEndpoints(d).end.y);
 }
 
-function animateDigits(sourceMap, operation, power, zeroFill, version) {
+function animateDigits(sourceMap, resultMap, operation, power, version) {
   const movingLayer = svg.select(".moving");
   movingLayer.selectAll("*").remove();
 
-  animateDigitData(movementData(sourceMap, operation, power, zeroFill, `moving-${version}`), version, true);
+  animateDigitData(movementData(sourceMap, resultMap, operation, power, `moving-${version}`), version, true);
 }
 
 function animationSpeed() {
@@ -584,7 +642,7 @@ function renderAnswerFeedback(userAnswer, correctAnswer, userCorrect) {
     .join("text")
     .attr("class", `answer-feedback ${userCorrect ? "correct-feedback" : "incorrect-feedback"}`)
     .attr("x", layout.marginLeft + (COLUMNS.length * layout.columnWidth + layout.decimalGap) / 2)
-    .attr("y", rowY(2) + layout.rowHeight + 54)
+    .attr("y", rowY(2) + layout.rowHeight + 36)
     .text((d) => d);
 }
 
@@ -600,10 +658,11 @@ function animateClickedDigit(digit, resultMap, settings, totalReveals, version) 
   animateDigitData([digit], version, false);
   window.setTimeout(() => {
     if (version !== renderVersion || !revealed) return;
+    svg.select(".moving").selectAll("*").remove();
     if (clickedAnimationKeys.size >= totalReveals) {
       renderStaticDigits(
         svg.select(".static-result"),
-        digitDataFromMap(displayMap(resultMap, settings.zeroFill), 1, `result-${version}`, settings.zeroFill),
+        filledDigitData(resultMap, 1, `result-${version}`),
       );
     } else {
       clickedResultData.set(digit.id, {
@@ -636,7 +695,7 @@ function buildState() {
   const result = calculateValue(parsed.number, settings.operation, settings.power);
   const resultParsed = parseNumber(formatValue(result));
   const resultMap = digitMap(resultParsed);
-  const movementMap = shiftedDigitMap(sourceMap, settings.operation, settings.power, false);
+  const movementMap = shiftedDigitMap(sourceMap, settings.operation, settings.power);
 
   if (Math.max(...movementMap.keys(), 0) > 3 || Math.min(...movementMap.keys(), 0) < -3) {
     throw new Error("That result moves beyond the chart. Try a smaller number or a smaller power of ten.");
@@ -671,7 +730,7 @@ function renderBase(resetAnswer = false) {
   clickedResultData = new Map();
 
   try {
-    const { settings, parsed, sourceMap, result } = buildState();
+    const { settings, parsed, sourceMap, result, resultMap } = buildState();
     clearError();
     svg.attr("viewBox", `0 0 ${layout.width} ${layout.height}`);
     svg.selectAll("*").interrupt();
@@ -680,11 +739,13 @@ function renderBase(resetAnswer = false) {
 
     renderHeaders(settings.headerStyle);
     renderGrid();
-    applyGridVisibility(settings.hideGrid);
     renderDecimalMarks();
     renderStaticDigits(
       svg.select(".static-start"),
-      digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, `start-${renderVersion}`, settings.zeroFill),
+      filledDigitData(sourceMap, 0, `start-${renderVersion}`, (exponent) => {
+        const direction = settings.operation === "multiply" ? 1 : -1;
+        return resultMap.get(exponent + direction * settings.power) === "0";
+      }),
     );
     renderAnswerInputs();
     bindAnswerInputs();
@@ -717,10 +778,9 @@ function revealAnswer() {
 
     clearError();
     clearInputStates();
-    markAnswer(displayMap(resultMap, settings.zeroFill), userCorrect);
+    markAnswer(displayMap(resultMap), userCorrect);
     svg.selectAll("*").interrupt();
     renderGrid(true);
-    applyGridVisibility(settings.hideGrid);
     renderDecimalMarks();
     svg.select(".static-result").selectAll("*").remove();
     svg.select(".moving").selectAll("*").remove();
@@ -730,17 +790,18 @@ function revealAnswer() {
     if (settings.clickAnimate) {
       enableClickAnimations(sourceMap, resultMap, settings, version);
     } else {
-      renderMovementArrows(sourceMap, settings.operation, settings.power, settings.zeroFill);
-      animateDigits(sourceMap, settings.operation, settings.power, settings.zeroFill, version);
+      renderMovementArrows(sourceMap, resultMap, settings.operation, settings.power);
+      animateDigits(sourceMap, resultMap, settings.operation, settings.power, version);
 
       const speed = animationSpeed();
       window.setTimeout(() => {
         if (version !== renderVersion || !revealed) return;
+        svg.select(".moving").selectAll("*").remove();
         renderStaticDigits(
           svg.select(".static-result"),
-          digitDataFromMap(displayMap(resultMap, settings.zeroFill), 1, `result-${version}`, settings.zeroFill),
+          filledDigitData(resultMap, 1, `result-${version}`),
         );
-      }, digitDataFromMap(displayMap(sourceMap, settings.zeroFill), 0, "timing").length * speed.delay + speed.duration + 20);
+      }, movementData(sourceMap, resultMap, settings.operation, settings.power, "timing").length * speed.delay + speed.duration + 20);
     }
     updateUrlSettings();
   } catch (error) {
