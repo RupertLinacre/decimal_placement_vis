@@ -1,12 +1,26 @@
-const COLUMNS = [
-  { key: "thousands", exponent: 3, word: "thousands", fraction: "1000" },
-  { key: "hundreds", exponent: 2, word: "hundreds", fraction: "100" },
-  { key: "tens", exponent: 1, word: "tens", fraction: "10" },
-  { key: "ones", exponent: 0, word: "ones", fraction: "1" },
-  { key: "tenths", exponent: -1, word: "tenths", fraction: "\\frac{1}{10}" },
-  { key: "hundredths", exponent: -2, word: "hundredths", fraction: "\\frac{1}{100}" },
-  { key: "thousandths", exponent: -3, word: "thousandths", fraction: "\\frac{1}{1000}" },
-];
+const PLACE_NAMES = new Map([
+  [0, "ones"],
+  [1, "tens"],
+  [2, "hundreds"],
+  [3, "thousands"],
+  [4, "ten thousands"],
+  [5, "hundred thousands"],
+  [6, "millions"],
+  [7, "ten millions"],
+  [8, "hundred millions"],
+  [9, "billions"],
+  [-1, "tenths"],
+  [-2, "hundredths"],
+  [-3, "thousandths"],
+  [-4, "ten-thousandths"],
+  [-5, "hundred-thousandths"],
+  [-6, "millionths"],
+  [-7, "ten-millionths"],
+  [-8, "hundred-millionths"],
+  [-9, "billionths"],
+]);
+
+let COLUMNS = [];
 
 const svg = d3.select("#placeValueSvg");
 const controls = document.querySelector("#controls");
@@ -31,12 +45,23 @@ const layout = {
   decimalGap: 24,
 };
 
-const BASE_ANIMATION = { delay: 360, duration: 760 };
+function columnForExponent(exponent) {
+  const word = PLACE_NAMES.get(exponent) || (exponent > 0 ? `10^${exponent}s` : `10^${exponent}`);
+  let fraction = "1";
+  if (exponent > 0) fraction = `1${"0".repeat(exponent)}`;
+  if (exponent < 0) fraction = `\\frac{1}{1${"0".repeat(Math.abs(exponent))}}`;
+  return { key: `place-${exponent}`, exponent, word, fraction };
+}
 
-const formatter = new Intl.NumberFormat("en-GB", {
-  maximumFractionDigits: 12,
-  useGrouping: false,
-});
+function configureColumns(...maps) {
+  const exponents = maps.flatMap((map) => Array.from(map.keys()));
+  const highestExponent = Math.max(3, ...exponents);
+  const lowestExponent = Math.min(-3, ...exponents);
+  COLUMNS = d3.range(highestExponent, lowestExponent - 1, -1).map(columnForExponent);
+  layout.width = layout.marginLeft + COLUMNS.length * layout.columnWidth + layout.decimalGap + 56;
+}
+
+const BASE_ANIMATION = { delay: 360, duration: 760 };
 
 let renderVersion = 0;
 let revealed = false;
@@ -110,11 +135,8 @@ function parseNumber(value) {
   const [integerPartRaw, decimalPartRaw = ""] = value.split(".");
   const integerPart = (integerPartRaw || "0").replace(/^0+(?=\d)/, "");
   const decimalPart = decimalPartRaw;
-  const highestExponent = integerPart === "0" ? 0 : integerPart.length - 1;
-  const lowestExponent = decimalPart.length ? -decimalPart.length : 0;
-
-  if (highestExponent > 3 || lowestExponent < -3) {
-    throw new Error("Use a number from thousands to thousandths for this chart.");
+  if (integerPart.length + decimalPart.length > 30) {
+    throw new Error("Use no more than 30 digits so the place value chart remains readable.");
   }
 
   return { number, integerPart, decimalPart };
@@ -127,16 +149,12 @@ function digitMap(parsed) {
 
   integerDigits.forEach((digit, index) => {
     const exponent = startExponent - index;
-    if (exponent >= -3 && exponent <= 3) {
-      map.set(exponent, digit);
-    }
+    map.set(exponent, digit);
   });
 
   parsed.decimalPart.split("").forEach((digit, index) => {
     const exponent = -(index + 1);
-    if (exponent >= -3 && exponent <= 3) {
-      map.set(exponent, digit);
-    }
+    map.set(exponent, digit);
   });
 
   if (!map.size) {
@@ -165,15 +183,19 @@ function shiftedDigitMap(sourceMap, operation, power) {
   return result;
 }
 
-function calculateValue(value, operation, power) {
-  const factor = 10 ** power;
-  const result = operation === "multiply" ? value * factor : value / factor;
-  return Number(result.toPrecision(14));
-}
+function valueStringFromMap(map) {
+  const highestExponent = Math.max(0, ...map.keys());
+  const lowestExponent = Math.min(0, ...map.keys());
+  let value = "";
 
-function formatValue(value) {
-  if (Object.is(value, -0)) return "0";
-  return formatter.format(value);
+  for (let exponent = highestExponent; exponent >= lowestExponent; exponent -= 1) {
+    if (exponent === -1) value += ".";
+    value += map.get(exponent) || "0";
+  }
+
+  const [integerPart, decimalPart] = value.split(".");
+  const normalizedInteger = integerPart.replace(/^0+(?=\d)/, "") || "0";
+  return decimalPart === undefined ? normalizedInteger : `${normalizedInteger}.${decimalPart}`;
 }
 
 function operatorSymbol(operation) {
@@ -181,7 +203,8 @@ function operatorSymbol(operation) {
 }
 
 function xForIndex(index) {
-  const gap = index >= 4 ? layout.decimalGap : 0;
+  const onesIndex = COLUMNS.findIndex((column) => column.exponent === 0);
+  const gap = index > onesIndex ? layout.decimalGap : 0;
   return layout.marginLeft + index * layout.columnWidth + gap;
 }
 
@@ -199,7 +222,8 @@ function tokenY(rowIndex) {
 }
 
 function decimalX() {
-  return layout.marginLeft + 4 * layout.columnWidth + layout.decimalGap / 2;
+  const onesIndex = COLUMNS.findIndex((column) => column.exponent === 0);
+  return layout.marginLeft + (onesIndex + 1) * layout.columnWidth + layout.decimalGap / 2;
 }
 
 function renderHeaders(headerStyle) {
@@ -338,10 +362,7 @@ function movementData(sourceMap, resultMap, operation, power, prefix = "move") {
       ...digit,
       targetExponent: digit.exponent + direction * power,
     }))
-    .filter((digit) => {
-      if (digit.targetExponent < -3 || digit.targetExponent > 3) return false;
-      return sourceMap.has(digit.exponent) || resultMap.get(digit.targetExponent) === "0";
-    });
+    .filter((digit) => sourceMap.has(digit.exponent) || resultMap.get(digit.targetExponent) === "0");
 }
 
 function renderStaticDigits(group, data) {
@@ -477,15 +498,17 @@ function clearInputStates() {
   });
 }
 
-function answerValue() {
-  let total = 0;
-  document.querySelectorAll(".answer-cell").forEach((input) => {
-    const digit = input.value.trim();
-    if (digit) {
-      total += Number(digit) * 10 ** Number(input.dataset.exponent);
-    }
-  });
-  return Number(total.toPrecision(14));
+function isAnswerCorrect(resultMap) {
+  const inputs = Array.from(document.querySelectorAll(".answer-cell"));
+  const hasAnswer = inputs.some((input) => input.value.trim());
+  return (
+    hasAnswer &&
+    inputs.every((input) => {
+      const expected = resultMap.get(Number(input.dataset.exponent)) || "0";
+      const entered = input.value.trim();
+      return entered === expected || (!entered && expected === "0");
+    })
+  );
 }
 
 function answerDisplay() {
@@ -623,8 +646,8 @@ function animateDigitData(data, version, staggered) {
     .attr("y", tokenY(1));
 }
 
-function renderQuestion(parsed, settings) {
-  const before = formatValue(parsed.number);
+function renderQuestion(settings) {
+  const before = settings.rawNumber || "0";
   const factor = 10 ** settings.power;
   calculationText.textContent = `What is ${before} ${operatorSymbol(settings.operation)} ${factor}?`;
 }
@@ -692,16 +715,13 @@ function buildState() {
   const settings = getSettings();
   const parsed = parseNumber(settings.rawNumber || "0");
   const sourceMap = digitMap(parsed);
-  const result = calculateValue(parsed.number, settings.operation, settings.power);
-  const resultParsed = parseNumber(formatValue(result));
-  const resultMap = digitMap(resultParsed);
   const movementMap = shiftedDigitMap(sourceMap, settings.operation, settings.power);
+  const resultText = valueStringFromMap(movementMap);
+  const resultParsed = parseNumber(resultText);
+  const resultMap = digitMap(resultParsed);
+  configureColumns(sourceMap, resultMap);
 
-  if (Math.max(...movementMap.keys(), 0) > 3 || Math.min(...movementMap.keys(), 0) < -3) {
-    throw new Error("That result moves beyond the chart. Try a smaller number or a smaller power of ten.");
-  }
-
-  return { settings, parsed, sourceMap, result, resultMap };
+  return { settings, sourceMap, resultMap, resultText };
 }
 
 function ensureSvgGroups() {
@@ -730,9 +750,9 @@ function renderBase(resetAnswer = false) {
   clickedResultData = new Map();
 
   try {
-    const { settings, parsed, sourceMap, result, resultMap } = buildState();
+    const { settings, sourceMap, resultMap } = buildState();
     clearError();
-    svg.attr("viewBox", `0 0 ${layout.width} ${layout.height}`);
+    svg.attr("viewBox", `0 0 ${layout.width} ${layout.height}`).style("min-width", `${Math.max(780, layout.width)}px`);
     svg.selectAll("*").interrupt();
     svg.selectAll("*").remove();
     ensureSvgGroups();
@@ -755,7 +775,7 @@ function renderBase(resetAnswer = false) {
     svg.select(".reveal-buttons").selectAll("*").remove();
     svg.select(".answer-feedback-layer").selectAll("*").remove();
     if (resetAnswer) clearAnswerInputs();
-    renderQuestion(parsed, settings);
+    renderQuestion(settings);
     updateUrlSettings();
   } catch (error) {
     showError(error.message);
@@ -771,8 +791,8 @@ function revealAnswer() {
   clickedResultData = new Map();
 
   try {
-    const { settings, parsed, sourceMap, result, resultMap } = buildState();
-    const userCorrect = Math.abs(answerValue() - result) < 1e-10;
+    const { settings, sourceMap, resultMap, resultText } = buildState();
+    const userCorrect = isAnswerCorrect(resultMap);
     const userAnswer = answerDisplay();
     revealed = true;
 
@@ -784,8 +804,8 @@ function revealAnswer() {
     renderDecimalMarks();
     svg.select(".static-result").selectAll("*").remove();
     svg.select(".moving").selectAll("*").remove();
-    renderQuestion(parsed, settings);
-    renderAnswerFeedback(userAnswer, formatValue(result), userCorrect);
+    renderQuestion(settings);
+    renderAnswerFeedback(userAnswer, resultText, userCorrect);
 
     if (settings.clickAnimate) {
       enableClickAnimations(sourceMap, resultMap, settings, version);
